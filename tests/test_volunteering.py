@@ -25,7 +25,7 @@ class Scripted:
     """Mixin: replaces the Claude call with a function of the batch and records the prompts."""
 
     def __init__(self, store, source, respond):
-        super().__init__(store, source, TZ, client=object(), volunteering=GROUPS)  # type: ignore[arg-type]
+        super().__init__(store, source, TZ, llm=object(), volunteering=GROUPS)  # type: ignore[arg-type]
         self.respond = respond
         self.batches: list[list[str]] = []
         self.prompts: list[str] = []

@@ -49,11 +49,12 @@ src/seth_agent/
 ├── groups.py              VolunteeringGroups: which WhatsApp groups are volunteering groups
 ├── source.py              MessageSource: read-only client for seth-ingestion's seth-feed HTTP API
 ├── agent.py               Agent: the poll loop, batching, transactions, high-water mark
+├── llm.py                 The model behind the extractors: AnthropicLLM or LocalLLM (OpenAI-compatible server)
 ├── api.py                 FastAPI app: /calendar, /volunteering, /events/{id}, /health, and the dashboard at /
 ├── dashboard/             The dashboard: one static index.html (no build step) and the Seth logos
 ├── extractors/
 │   ├── base.py            Extractor interface, TransientError, PermanentError
-│   ├── calendar.py        CalendarExtractor: the school calendar. Prompt, Claude call, applying operations
+│   ├── calendar.py        CalendarExtractor: the school calendar. Prompt, applying operations
 │   └── volunteering.py    VolunteeringExtractor: the same, for volunteering groups, with its own prompt
 └── memory/
     ├── schema.sql         Memory database schema (idempotent)
@@ -61,6 +62,7 @@ src/seth_agent/
 tests/
 ├── conftest.py            Fixtures: a fake seth-feed (fakefeed.py), a temp memory.db
 ├── fakefeed.py            In-memory stand-in for seth-feed behind an httpx MockTransport
+├── test_llm.py            LocalLLM against a mock server, provider selection, extractors calling the LLM
 ├── test_source.py         Reading seth-feed: cursor paging, groups, edits, replies, albums, errors
 ├── test_store.py          Date spans, overlap queries, updates, cancels, history
 ├── test_agent.py          The poll loop and extractor, with Claude replaced by scripted responses
@@ -176,6 +178,15 @@ class CalendarOps(BaseModel):
 ### Applying operations
 
 `apply()` maps `source_message_ids` back to `(chat_jid, message_id)` keys. Unknown ids are ignored, and if none remain, the whole batch is used as the source. It then calls the matching `MemoryStore` method. An operation that fails validation (an add with no date, an update to a nonexistent id) is logged and skipped, and the rest of the batch still applies.
+
+### Providers
+
+Extractors don't call a model API themselves. They hand a system prompt, a user prompt and a Pydantic schema to an `LLM` ([llm.py](../src/seth_agent/llm.py)), which returns a validated instance of the schema or raises `TransientError` / `PermanentError`. `SETH_PROVIDER` picks the implementation in `build_llm`:
+
+- `AnthropicLLM` makes the `client.beta.messages.parse` call described below.
+- `LocalLLM` posts to an OpenAI-compatible `/chat/completions` endpoint (Ollama by default) with temperature 0, the schema as `response_format` (so the server constrains the output) and the schema repeated in the system prompt (for servers that ignore `response_format`). It strips `<think>` blocks and code fences, then validates with Pydantic. A server that is down, 404 (model not pulled), 429 or 5xx is transient; a 400, unparseable or invalid output, or `finish_reason: length` is permanent.
+
+Both accept `images=[Image(media_type, data)]`, so a future photo extractor can send pictures without caring about the provider. The model settings below apply to `AnthropicLLM`.
 
 ### Model settings
 

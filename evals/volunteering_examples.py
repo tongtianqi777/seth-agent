@@ -1,6 +1,7 @@
 """Live check of the volunteering extractor against Claude: "it's me this week" style messages.
 
 Costs a few API calls. Run with:  ANTHROPIC_API_KEY=... .venv/bin/python evals/volunteering_examples.py
+To try a local model instead:  SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/volunteering_examples.py
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 from seth_agent.agent import Agent
 from seth_agent.config import Config
 from seth_agent.extractors.volunteering import VolunteeringExtractor
+from seth_agent.llm import build_llm
 from seth_agent.memory.store import MemoryStore
 from seth_agent.source import MessageSource
 
@@ -43,7 +45,7 @@ def main() -> int:
     feed = FakeFeed()
     store, source = MemoryStore(tmp / "memory.db"), MessageSource("http://feed", client=feed.client)
     volunteering = Config.from_env().volunteering  # the real defaults, including the usual routine
-    agent = Agent(store, source, [VolunteeringExtractor(store, source, TZ, volunteering=volunteering)])
+    agent = Agent(store, source, [VolunteeringExtractor(store, source, TZ, llm=build_llm(Config.from_env()), volunteering=volunteering)])
 
     add(feed, ROUND_1, 0)
     agent.poll_once()
