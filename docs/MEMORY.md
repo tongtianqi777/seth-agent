@@ -8,7 +8,7 @@ The source of truth is [src/seth_agent/memory/schema.sql](../src/seth_agent/memo
 
 | Store | Location | Owner | Contents |
 |---|---|---|---|
-| Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the school calendar, plus the agent's own bookkeeping. Other memories (latest updates, media) will be added here |
+| Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the school calendar and the volunteering calendars, plus the agent's own bookkeeping. Other memories (latest updates, media) will be added here |
 | Message feed | `seth-feed` API (`SETH_FEED_URL`) | seth-ingestion | the raw messages from the school's WhatsApp groups. seth-agent **only reads** them. See seth-ingestion's [CONSUMING.md](../../seth-ingestion/docs/CONSUMING.md) |
 
 The memory database is SQLite in WAL mode. The agent creates it on first run and brings the schema up to date on every start. You can read it with `sqlite3` while the agent is running.
@@ -78,6 +78,8 @@ One row per event the agent knows about.
 | Column | Type | Null? | Description |
 |---|---|---|---|
 | `id` | INTEGER | no | **Primary key** |
+| `category` | TEXT | no | `school` for the school calendar, `volunteering` for a volunteering group's calendar |
+| `calendar` | TEXT | no | Which calendar within the category: `School`, or the volunteering group's name, e.g. `Preschool P.E. Teachers` |
 | `title` | TEXT | no | Short name from the user's point of view, e.g. `Dad's flight` |
 | `details` | TEXT | yes | One sentence of extra context |
 | `date_start` | TEXT | no | First day of the event's span, inclusive |
@@ -89,7 +91,9 @@ One row per event the agent knows about.
 | `created_at` | TEXT | no | When the row was created |
 | `updated_at` | TEXT | no | When the row last changed |
 
-Index `idx_events_dates` on `(status, date_start, date_end)` serves range queries.
+Index `idx_events_dates` on `(status, date_start, date_end)` serves range queries, and `idx_events_calendar` on `(category, calendar, status, date_start)` serves reads of one calendar.
+
+Events from a volunteering group go on that group's calendar. Each calendar is separate: the agent only shows Claude the events of the calendar it is working on, and ignores an update or cancel aimed at an event on another calendar. Databases made before volunteering calendars existed are upgraded on start, with every existing event becoming a `school` event.
 
 ### Fuzzy dates
 
@@ -238,7 +242,8 @@ SELECT at, error, message_ids FROM extraction_errors ORDER BY id DESC LIMIT 10;
 | To… | Do this (with the agent stopped) |
 |---|---|
 | Rebuild everything from scratch | Delete `data/memory.db` (and `-wal`/`-shm` if present) |
-| Re-read every message for the calendar, keeping nothing | `DELETE FROM event_history; DELETE FROM event_sources; DELETE FROM events; DELETE FROM processed_messages WHERE extractor = 'calendar'; DELETE FROM agent_state WHERE key = 'source.cursor';` (the `sqlite3` shell doesn't enforce foreign keys, so the child tables have to be cleared explicitly) |
+| Read a volunteering group's earlier messages onto its calendar. Needed once, if the group was a school group before it became a volunteering group | `DELETE FROM agent_state WHERE key = 'source.cursor';`. Only the volunteering extractor has unread messages there, so the school calendar is untouched. Events the group already put on the school calendar stay there, so cancel those by hand if you don't want them |
+| Re-read every message for the calendar, keeping nothing | `DELETE FROM event_history; DELETE FROM event_sources; DELETE FROM events; DELETE FROM processed_messages WHERE extractor IN ('calendar', 'volunteering'); DELETE FROM agent_state WHERE key = 'source.cursor';` (the `sqlite3` shell doesn't enforce foreign keys, so the child tables have to be cleared explicitly) |
 | Retry batches that failed | `DELETE FROM processed_messages WHERE outcome = 'failed'; DELETE FROM agent_state WHERE key = 'source.cursor';` |
 
 Clearing `source.cursor` makes the next poll read the whole message history from seth-feed again. Only messages without a matching `processed_messages` row are sent to Claude, so the extra cost is a local read.
@@ -246,5 +251,5 @@ Clearing `source.cursor` makes the next poll read the whole message history from
 ## Changing the schema
 
 - **New tables or indexes:** add them to `schema.sql` with `IF NOT EXISTS`. They're created on the next start.
-- **New columns on existing tables:** `CREATE TABLE IF NOT EXISTS` won't add them to a database that already exists. Add an `ALTER TABLE … ADD COLUMN` step to `MemoryStore.__init__`, guarded by a check of `pragma_table_info`, as seth-ingestion does in its `migrate`. Once there are several such steps, switch to numbered migrations keyed on `PRAGMA user_version`.
+- **New columns on existing tables:** `CREATE TABLE IF NOT EXISTS` won't add them to a database that already exists. Add an `ALTER TABLE … ADD COLUMN` step to `MemoryStore._migrate`, guarded by a check of `PRAGMA table_info`, as seth-ingestion does in its `migrate`. `events.category` and `events.calendar` were added this way. Once there are several such steps, switch to numbered migrations keyed on `PRAGMA user_version`.
 - **Tests:** add a case to [tests/test_store.py](../tests/test_store.py).

@@ -14,6 +14,9 @@ from typing import Any
 
 from ..source import Message
 
+SCHOOL = "school"
+VOLUNTEERING = "volunteering"
+SCHOOL_CALENDAR = "School"  # the `calendar` of every school-category event
 PRECISIONS = ("day", "range", "week", "month", "year")
 EVENT_FIELDS = ("title", "details", "date_start", "date_end", "precision", "time", "confidence")
 
@@ -61,6 +64,20 @@ class MemoryStore:
         with self.transaction() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(schema)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Brings a database made by an older version up to date. Every step is idempotent."""
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(events)")}
+        if "category" not in columns:  # before volunteering calendars, every event was a school event
+            conn.execute(
+                "ALTER TABLE events ADD COLUMN category TEXT NOT NULL DEFAULT 'school' "
+                "CHECK (category IN ('school', 'volunteering'))"
+            )
+        if "calendar" not in columns:
+            conn.execute(f"ALTER TABLE events ADD COLUMN calendar TEXT NOT NULL DEFAULT '{SCHOOL_CALENDAR}'")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_calendar ON events (category, calendar, status, date_start)")
 
     # -- connections -------------------------------------------------------
 
@@ -140,13 +157,17 @@ class MemoryStore:
         fields: dict[str, Any],
         sources: Iterable[tuple[str, str]],
         reason: str | None = None,
+        category: str = SCHOOL,
+        calendar: str = SCHOOL_CALENDAR,
     ) -> int:
         fields = _normalize_fields(fields)
         ts = now_ts()
         cur = conn.execute(
-            """INSERT INTO events (title, details, date_start, date_end, precision, time, confidence, created_at, updated_at)
-               VALUES (:title, :details, :date_start, :date_end, :precision, :time, :confidence, :ts, :ts)""",
-            {**{f: fields.get(f) for f in EVENT_FIELDS}, "ts": ts},
+            """INSERT INTO events (category, calendar, title, details, date_start, date_end, precision, time, confidence,
+                                    created_at, updated_at)
+               VALUES (:category, :calendar, :title, :details, :date_start, :date_end, :precision, :time, :confidence,
+                       :ts, :ts)""",
+            {**{f: fields.get(f) for f in EVENT_FIELDS}, "category": category, "calendar": calendar, "ts": ts},
         )
         event_id = cur.lastrowid
         assert event_id is not None
@@ -208,6 +229,11 @@ class MemoryStore:
             (event_id, op, json.dumps(before) if before else None, json.dumps(after) if after else None, reason, now_ts()),
         )
 
+    def calendar_of(self, conn: sqlite3.Connection, event_id: int) -> tuple[str, str] | None:
+        """The (category, calendar) an event is on, or None if there's no such event."""
+        row = self._row(conn, event_id)
+        return (row["category"], row["calendar"]) if row else None
+
     def _row(self, conn, event_id: int) -> dict[str, Any] | None:
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return dict(row) if row else None
@@ -219,10 +245,21 @@ class MemoryStore:
         date_from: date | None = None,
         date_to: date | None = None,
         include_cancelled: bool = False,
+        category: str | None = None,
+        calendar: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Events whose span overlaps [date_from, date_to], ordered by start date."""
+        """Events whose span overlaps [date_from, date_to], ordered by start date.
+
+        `category` ('school' or 'volunteering') and `calendar` (a volunteering group's name) narrow it to one calendar.
+        """
         sql = "SELECT * FROM events WHERE 1=1"
         params: list[Any] = []
+        if category:
+            sql += " AND category = ?"
+            params.append(category)
+        if calendar:
+            sql += " AND calendar = ?"
+            params.append(calendar)
         if not include_cancelled:
             sql += " AND status = 'active'"
         if date_from:
@@ -238,6 +275,14 @@ class MemoryStore:
         for e in events:
             e["label"] = event_label(e)
         return events
+
+    def calendar_names(self, category: str) -> list[str]:
+        """The calendars in a category that have ever had an event, oldest first."""
+        with self.transaction() as conn:
+            rows = conn.execute(
+                "SELECT calendar FROM events WHERE category = ? GROUP BY calendar ORDER BY MIN(id)", (category,)
+            )
+            return [r["calendar"] for r in rows]
 
     def get_event(self, event_id: int) -> dict[str, Any] | None:
         with self.transaction() as conn:

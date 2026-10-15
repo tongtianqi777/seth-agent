@@ -46,13 +46,15 @@ Inside seth-agent, `seth-agent run` runs one process with two threads:
 src/seth_agent/
 ├── cli.py                 Entry point: `seth-agent run | once | calendar`
 ├── config.py              Settings from SETH_* environment variables
+├── groups.py              VolunteeringGroups: which WhatsApp groups are volunteering groups
 ├── source.py              MessageSource: read-only client for seth-ingestion's seth-feed HTTP API
 ├── agent.py               Agent: the poll loop, batching, transactions, high-water mark
-├── api.py                 FastAPI app: /calendar, /events/{id}, /health, and the dashboard at /
+├── api.py                 FastAPI app: /calendar, /volunteering, /events/{id}, /health, and the dashboard at /
 ├── dashboard/             The dashboard: one static index.html (no build step) and the Seth logos
 ├── extractors/
 │   ├── base.py            Extractor interface, TransientError, PermanentError
-│   └── calendar.py        CalendarExtractor: prompt, Claude call, applying operations
+│   ├── calendar.py        CalendarExtractor: the school calendar. Prompt, Claude call, applying operations
+│   └── volunteering.py    VolunteeringExtractor: the same, for volunteering groups, with its own prompt
 └── memory/
     ├── schema.sql         Memory database schema (idempotent)
     └── store.py           MemoryStore: all reads and writes to memory.db
@@ -62,9 +64,11 @@ tests/
 ├── test_source.py         Reading seth-feed: cursor paging, groups, edits, replies, albums, errors
 ├── test_store.py          Date spans, overlap queries, updates, cancels, history
 ├── test_agent.py          The poll loop and extractor, with Claude replaced by scripted responses
+├── test_volunteering.py   Volunteering groups: routing, separate calendars, migration, API
 └── test_api.py            HTTP responses
 evals/
-└── calendar_examples.py   Live check against Claude using the examples from the spec
+├── calendar_examples.py     Live check against Claude using the examples from the spec
+└── volunteering_examples.py Live check of "it's me this week" style messages in a volunteering group
 ```
 
 Each module has one job, and only `MemoryStore` writes to memory.db.
@@ -319,6 +323,25 @@ What you get for free:
 - **Backfill.** `processed_messages` is tracked per extractor, so the new extractor sees every past message as unprocessed and works through the history on its first run. The calendar isn't affected.
 - **Independence.** Each extractor has its own filtering, batching, transactions and error handling. A failure in one doesn't stop the others in the same poll.
 - **Media.** Photo-based extractors can read files from seth-ingestion's `message_media_files` table and media folder. Add a query for them to `MessageSource`, and have `wants()` accept messages with `media_file_count > 0`.
+
+## Volunteering calendars
+
+Messages from a volunteering group go to a different extractor than every other message. [extractors/volunteering.py](../src/seth_agent/extractors/volunteering.py) subclasses `CalendarExtractor` and changes three things:
+
+- **Which groups it reads.** `handles_group` is true only for groups listed in `SETH_VOLUNTEERING_GROUPS` (`VolunteeringGroups` in [groups.py](../src/seth_agent/groups.py), matched by name, ignoring case and extra spaces). `CalendarExtractor.handles_group` is the exact opposite, so each message belongs to one extractor and the other marks it `skipped`. A group's messages are never read for both calendars.
+- **Its prompt.** `SYSTEM_PROMPT` in that module is about volunteer sessions: who signs up for which date, swaps and covers, and the details parents discuss. It shares the rules for resolving dates and keeping the calendar consistent (`SHARED_RULES`) with the school prompt.
+- **Which calendar events land on.** `events.category = 'volunteering'` and `events.calendar` is the group's name. Both extractors keep to their own calendar: `build_prompt` only shows Claude events from it, and `apply` skips any update or cancel for an event that isn't on it.
+
+**Reading "it's me this week".** Parents say whose turn it is and leave out the date, the time and sometimes the name. The volunteering prompt has a section on this ("Reading who is on duty"). Claude infers the missing pieces from four things:
+
+- the **group name** (what the activity is),
+- the **sender's contact name**, already in every message line as `from=` ("me" is the sender),
+- the **wording** ("this week" is the Monday-to-Sunday week of the sent date, "next week" the one after, and a session that has already happened means the next one, with lower confidence),
+- the group's **usual routine**, a sentence per group that `VolunteeringExtractor.group_notes` adds to each prompt (`The group's usual routine: …`), e.g. Fridays at 11:30am. It comes from `SETH_VOLUNTEERING_GROUPS` (`Name=routine; Other Name`, parsed by `parse_groups`), with Preschool P.E. Teachers built in. A message that names a day or time overrides it.
+
+Each on-duty statement becomes one event per session, titled with the volunteer ("P.E. volunteer: Sarah"), and a correction ("it's actually Tom") updates it. `evals/volunteering_examples.py` checks this live against Claude.
+
+The extractors are named `calendar` and `volunteering` in `processed_messages`, so each tracks its own progress. To add another volunteering group, add its name (and usual routine) to `SETH_VOLUNTEERING_GROUPS`. It gets its own calendar, tab picker entry and API name with no code changes.
 
 ## Design decisions
 

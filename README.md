@@ -37,6 +37,7 @@ Solid lines work today. Dotted lines are planned (see [What's next](#whats-next)
 | Memory | Status | What it holds |
 |---|---|---|
 | **School calendar** | Working | Upcoming events, closures, deadlines and schedule changes, picked out of the school's WhatsApp groups |
+| **Volunteering calendars** | Working | For each volunteering group, such as the preschool P.E. teachers' parents, who is volunteering when and what it involves |
 | **Latest updates** | Planned | The announcements and news worth keeping, in one place |
 | **Media library** | Planned | The school's photos and videos, organized so they can be found and reused |
 
@@ -56,6 +57,7 @@ When plans change, the calendar changes with them. *"The field trip is moved to 
 - [What's next](#whats-next)
 - [How the calendar works](#how-the-calendar-works)
 - [Quick start](#quick-start)
+- [Volunteering groups](#volunteering-groups)
 - [Everyday use](#everyday-use)
 - [The dashboard](#the-dashboard)
 - [Reading the calendar](#reading-the-calendar)
@@ -137,6 +139,29 @@ The first time it runs, the agent reads every message already captured and build
 Nov 2026    #2 Parent-teacher conferences (rescheduled)
 ```
 
+## Volunteering groups
+
+Some groups aren't about the school as a whole. In **Preschool P.E. Teachers**, parents arrange who volunteers when and discuss what the volunteering involves. The agent treats a group like that as a *volunteering group*: it reads the group for volunteer sessions and their details, and puts them on that group's own **volunteering calendar**, not the school calendar. The school calendar never sees the group's messages.
+
+| A message in the group like… | becomes… |
+|---|---|
+| "I can help with P.E. this Thursday, 9 to 10" | **Thursday**, 09:00-10:00: P.E. volunteers, with the parent's name |
+| "Sarah's mom is joining Thursday too, bring water bottles" | the same event, with the second volunteer and the water bottles added |
+| "Sorry, I can't do Thursday anymore, can someone cover?" | the same event, noting that a cover is needed |
+| "It's me this week" (from Alex) | **Friday 11:30**: P.E. volunteer: Alex, because the P.E. class is usually on Fridays at 11:30 |
+| "It's Sarah this week" | **Friday 11:30**: P.E. volunteer: Sarah |
+| "Thank you everyone!" | nothing |
+
+Parents often just say whose turn it is. The agent works out the rest from the group's name, who sent the message ("me" is the sender), the wording ("this week", "next week") and the group's **usual routine**. For Preschool P.E. Teachers that is Fridays at 11:30am.
+
+**Preschool P.E. Teachers** is the only volunteering group today. To use a different list, set `SETH_VOLUNTEERING_GROUPS` to the group names, separated by semicolons, each with an optional usual routine after an `=` (see [Configuration](#configuration)). Names are matched ignoring capitals and extra spaces. For example:
+
+```bash
+SETH_VOLUNTEERING_GROUPS="Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am; Library Helpers=Library help is usually Tuesdays at 9am"
+```
+
+Groups are only sorted from now on. Messages the agent has already read stay where they were put. To read a volunteering group's earlier messages onto its calendar, see [Resetting](docs/MEMORY.md#resetting).
+
 ## Everyday use
 
 | Command | What it does |
@@ -146,6 +171,7 @@ Nov 2026    #2 Parent-teacher conferences (rescheduled)
 | `seth-agent calendar` | Prints upcoming events, from today onward |
 | `seth-agent calendar --from 2026-11-01 --to 2026-11-30` | Prints events in a date range |
 | `seth-agent calendar --all` | Also shows cancelled events |
+| `seth-agent calendar --group "Preschool P.E. Teachers"` | Prints that volunteering group's calendar instead of the school calendar |
 
 Add `-v` before any command for detailed logs, e.g. `seth-agent -v once`.
 
@@ -153,7 +179,7 @@ All commands live in `.venv/bin/`. To type just `seth-agent`, activate the envir
 
 ## The dashboard
 
-While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard has one tab for each kind of memory the agent maintains. Today that is the **School calendar**: a month view of every event, with a list view for small screens. Click an event to see the messages it came from and how it has changed. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
+While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard has one tab for each kind of memory the agent maintains. Today there are two: the **School calendar** and **Volunteering**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
 
 It uses the same look as the [seth-ingestion](../seth-ingestion) dashboard. New memories get their own tab, see [Adding a new kind of memory](docs/DEVELOPMENT.md#adding-a-new-kind-of-memory).
 
@@ -176,6 +202,13 @@ curl -s 'http://127.0.0.1:8765/calendar?from=2026-10-01&to=2026-12-31'
   },
   "events": [ ... ]
 }
+```
+
+Volunteering groups have their own calendars. `/volunteering` lists them, and `/calendar?group=` reads one:
+
+```bash
+curl -s 'http://127.0.0.1:8765/volunteering'
+curl -s 'http://127.0.0.1:8765/calendar?group=Preschool%20P.E.%20Teachers'
 ```
 
 To see why an event exists, ask for it by id. The response includes the messages behind it and its full change history:
@@ -206,6 +239,7 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_MODEL` | `claude-opus-5-5` | The Claude model that reads the messages |
 | `SETH_EFFORT` | `medium` | How carefully Claude thinks: `low` is cheaper and faster, `high` is more careful with tricky dates |
 | `SETH_BATCH_SIZE` | `20` | Messages per Claude request |
+| `SETH_VOLUNTEERING_GROUPS` | `Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am.` | WhatsApp groups to treat as volunteering groups, as `Name=usual routine` entries separated by `;`. The routine is optional. Setting it replaces the default (so include Preschool P.E. Teachers and its routine if you still want them); set it empty for none |
 | `SETH_API_HOST` / `SETH_API_PORT` | `127.0.0.1` / `8765` | Where the HTTP API listens |
 
 Example:

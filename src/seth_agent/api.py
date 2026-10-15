@@ -9,35 +9,56 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 
 from .agent import CURSOR_KEY
-from .memory.store import MemoryStore
+from .groups import VolunteeringGroups
+from .memory.store import SCHOOL, VOLUNTEERING, MemoryStore
 from .source import MessageSource, SourceError
 
 
 DASHBOARD_DIR = Path(__file__).parent / "dashboard"
 
 
-def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI:
+def create_app(
+    store: MemoryStore, source: MessageSource, tz: tzinfo, volunteering: VolunteeringGroups | None = None
+) -> FastAPI:
     app = FastAPI(title="seth-agent memory")
+    volunteering = volunteering or VolunteeringGroups()
+
+    def volunteering_calendars() -> list[str]:
+        """The configured volunteering groups, in order, then any others that still have events."""
+        names = list(volunteering)
+        return names + [n for n in store.calendar_names(VOLUNTEERING) if n not in names]
 
     @app.get("/calendar")
     def calendar(
         date_from: date | None = Query(None, alias="from", description="YYYY-MM-DD; default today"),
         date_to: date | None = Query(None, alias="to", description="YYYY-MM-DD; default no limit"),
         include_cancelled: bool = False,
+        group: str | None = Query(None, description="A volunteering group's name; default the school calendar"),
     ):
         today = datetime.now(tz).date()
         date_from = date_from or today
-        events = store.list_events(date_from, date_to, include_cancelled)
+        if group is None:
+            events = store.list_events(date_from, date_to, include_cancelled, category=SCHOOL)
+        else:
+            name = next((n for n in volunteering_calendars() if n.casefold() == group.strip().casefold()), None)
+            if name is None:
+                raise HTTPException(404, "no such volunteering group")
+            events = store.list_events(date_from, date_to, include_cancelled, category=VOLUNTEERING, calendar=name)
         days: dict[str, list[dict]] = {}
         for e in events:
             days.setdefault(e["label"], []).append(_summary(e))
         return {
+            **({} if group is None else {"group": name}),
             "today": today.isoformat(),
             "from": date_from.isoformat(),
             "to": date_to.isoformat() if date_to else None,
             "days": days,
             "events": events,
         }
+
+    @app.get("/volunteering")
+    def volunteering_groups():
+        return {"calendars": volunteering_calendars()}
 
     @app.get("/events/{event_id}")
     def event(event_id: int):
@@ -64,7 +85,8 @@ def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI
             "source_cursor": store.get_state(CURSOR_KEY),
             "last_transient_error": store.get_state("agent.last_transient_error"),
             "last_extraction_error": store.last_error(),
-            "active_events": len(store.list_events()),
+            "active_events": len(store.list_events(category=SCHOOL)),
+            "active_volunteering_events": len(store.list_events(category=VOLUNTEERING)),
         }
 
     # The dashboard page. Mounted last so the API routes above take precedence.

@@ -27,7 +27,7 @@ def test_calendar_and_event_endpoints(feed, source, store):
 def test_dashboard_is_served_alongside_the_api(source, store):
     client = TestClient(create_app(store, source, TZ))
     page = client.get("/")
-    assert page.status_code == 200 and "School calendar" in page.text
+    assert page.status_code == 200 and "School calendar" in page.text and "Volunteering" in page.text
     assert client.get("/seth-crest.png").status_code == 200
     assert client.get("/calendar").json()["today"]
     assert client.get("/health").status_code == 200

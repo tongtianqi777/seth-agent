@@ -35,10 +35,14 @@ CREATE TABLE IF NOT EXISTS extraction_errors (
 -- Calendar memory
 -- ---------------------------------------------------------------------------
 
--- One row per known event. Fuzzy dates are stored as a span:
+-- One row per known event. Each event is on one calendar: the school calendar, or the volunteering
+-- calendar of one volunteering group (category 'volunteering', calendar = the group's name).
+-- Fuzzy dates are stored as a span:
 -- "Nov 2026" is date_start 2026-11-01, date_end 2026-11-30, precision 'month'.
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY,
+    category   TEXT NOT NULL DEFAULT 'school' CHECK (category IN ('school', 'volunteering')),
+    calendar   TEXT NOT NULL DEFAULT 'School',
     title      TEXT NOT NULL,
     details    TEXT,
     date_start TEXT NOT NULL,             -- YYYY-MM-DD, inclusive

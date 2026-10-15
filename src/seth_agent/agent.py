@@ -117,12 +117,16 @@ class Agent:
 
 def build_agent(config: Config) -> Agent:
     from .extractors.calendar import CalendarExtractor
+    from .extractors.volunteering import VolunteeringExtractor
 
     store = MemoryStore(config.memory_db)
     source = MessageSource(config.feed_url)
+    # Both read the same feed; each one only takes the groups that belong to its calendar.
+    settings = dict(
+        model=config.model, effort=config.effort, batch_size=config.batch_size, volunteering=config.volunteering
+    )
     extractors: list[Extractor] = [
-        CalendarExtractor(
-            store, source, config.tz, model=config.model, effort=config.effort, batch_size=config.batch_size
-        ),
+        CalendarExtractor(store, source, config.tz, **settings),
+        VolunteeringExtractor(store, source, config.tz, **settings),
     ]
     return Agent(store, source, extractors)
