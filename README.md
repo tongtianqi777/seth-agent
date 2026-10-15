@@ -255,7 +255,7 @@ SETH_POLL_SECONDS=60 SETH_EFFORT=low .venv/bin/seth-agent run
 
 ## Running a local model
 
-Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, a Qwen3 model in the 30B class at 4-bit is a good place to start.
+Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, a Qwen3 model in the 30B class at 4-bit is a good place to start. The full walkthrough is in [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md), and the reasoning behind the model choice in [docs/LOCAL_MODEL_CHOICE.md](docs/LOCAL_MODEL_CHOICE.md).
 
 ```bash
 ollama pull qwen3:30b-a3b
@@ -316,3 +316,5 @@ The school's chats contain messages from parents, students and staff, so the age
 | [docs/API.md](docs/API.md) | Building an app or a tool on top of the school calendar: every endpoint, field and status code |
 | [docs/MEMORY.md](docs/MEMORY.md) | How the memory database is laid out, with ready-to-run SQL queries |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Working on the agent: architecture, how extraction works, testing, and adding new kinds of memory |
+| [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md) | Running a local model with Ollama on a Mac, step by step |
+| [docs/LOCAL_MODEL_CHOICE.md](docs/LOCAL_MODEL_CHOICE.md) | Which local models to try, the reasoning behind the shortlist, and how to decide between them |
