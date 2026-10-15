@@ -22,3 +22,12 @@ def test_calendar_and_event_endpoints(feed, source, store):
     assert e["sources"][0]["message"]["body"] == "Dad's flight is on 10/18"
     assert client.get("/events/99").status_code == 404
     assert client.get("/health").json()["active_events"] >= 0
+
+
+def test_dashboard_is_served_alongside_the_api(source, store):
+    client = TestClient(create_app(store, source, TZ))
+    page = client.get("/")
+    assert page.status_code == 200 and "School calendar" in page.text
+    assert client.get("/seth-crest.png").status_code == 200
+    assert client.get("/calendar").json()["today"]
+    assert client.get("/health").status_code == 200

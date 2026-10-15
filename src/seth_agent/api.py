@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import date, datetime, tzinfo
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 
 from .agent import CURSOR_KEY
 from .memory.store import MemoryStore
 from .source import MessageSource, SourceError
+
+
+DASHBOARD_DIR = Path(__file__).parent / "dashboard"
 
 
 def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI:
@@ -20,12 +25,14 @@ def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI
         date_to: date | None = Query(None, alias="to", description="YYYY-MM-DD; default no limit"),
         include_cancelled: bool = False,
     ):
-        date_from = date_from or datetime.now(tz).date()
+        today = datetime.now(tz).date()
+        date_from = date_from or today
         events = store.list_events(date_from, date_to, include_cancelled)
         days: dict[str, list[dict]] = {}
         for e in events:
             days.setdefault(e["label"], []).append(_summary(e))
         return {
+            "today": today.isoformat(),
             "from": date_from.isoformat(),
             "to": date_to.isoformat() if date_to else None,
             "days": days,
@@ -60,6 +67,8 @@ def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI
             "active_events": len(store.list_events()),
         }
 
+    # The dashboard page. Mounted last so the API routes above take precedence.
+    app.mount("/", StaticFiles(directory=DASHBOARD_DIR, html=True), name="dashboard")
     return app
 
 

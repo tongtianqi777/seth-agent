@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seth Agent Dashboard</title>
+<link rel="icon" href="seth-crest.png">
+<style>
+  /* Same look as the seth-ingestion dashboard: the palette comes from the Seth
+     logo's navy shield, green tree, gold book and cream pages. */
+  :root {
+    --navy: #002a46; --blue: #003e5d; --green: #739e30; --gold: #f1a618; --cream: #f0e9e0;
+    --bg: #f7f4ee; --card: #ffffff; --text: #10283a; --muted: #5a6875; --line: #e6dfd2; --heading: var(--navy);
+    --primary: var(--navy); --primary-hover: var(--blue); --primary-text: #ffffff; --link: var(--blue);
+    --ok-bg: #edf4e1; --ok: #48691a; --warn-bg: #fdf1d8; --warn: #7d5500; --off-bg: #efeae1; --off: #5b5d5f;
+    --bad-bg: #fbe7e4; --bad: #8f2d22;
+    --chip-bg: #e1ecf2; --chip: #002a46; --dim: #faf8f3;
+    --font: "Avenir Next", Avenir, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #071622; --card: #0d2131; --text: #eef0f2; --muted: #9fb0bd; --line: #1c3446; --heading: var(--cream);
+      --primary: var(--green); --primary-hover: #86b33c; --primary-text: #0c1806; --link: #f5c35a;
+      --ok-bg: #1d3313; --ok: #b7dc84; --warn-bg: #3a2b0c; --warn: #f7cf78; --off-bg: #172b3a; --off: #b3c0ca;
+      --bad-bg: #3c1c18; --bad: #f3aa9f;
+      --chip-bg: #17415c; --chip: #eef0f2; --dim: #0a1b29;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
+  header { background: var(--navy); color: var(--cream); }
+  .bar { max-width: 1040px; margin: 0 auto; padding: 16px 20px; display: flex; align-items: center; gap: 18px; }
+  .bar .logo { height: 58px; width: auto; }
+  .bar .divider { width: 1px; align-self: stretch; margin: 6px 0; background: rgba(240, 233, 224, .25); }
+  .bar h1 { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: .3px; color: var(--cream); }
+  .bar p { margin: 1px 0 0; font-size: 13px; color: var(--cream); opacity: .75; }
+  @media (max-width: 560px) { .bar .divider, .bar p { display: none; } .bar .logo { height: 46px; } }
+  .stripe { height: 4px; background: linear-gradient(90deg, var(--navy) 0 33%, var(--green) 33% 66%, var(--gold) 66%); }
+  main { max-width: 1040px; margin: 0 auto; padding: 22px 20px 40px; }
+  a { color: var(--link); }
+  button { font: inherit; font-weight: 600; border-radius: 9px; padding: 7px 16px; border: 1px solid transparent; cursor: pointer; color: inherit; background: none; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* Main tabs: one per kind of memory the agent maintains. */
+  .main-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; overflow-x: auto; }
+  .main-tabs button { border-radius: 9px 9px 0 0; border: 1px solid transparent; border-bottom: 0; color: var(--muted); padding: 9px 18px; margin-bottom: -1px; white-space: nowrap; }
+  .main-tabs button:hover { color: var(--text); }
+  .main-tabs button[aria-selected="true"] { background: var(--card); color: var(--heading); border-color: var(--line); box-shadow: inset 0 3px 0 var(--gold); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .card h2 { margin: 0 0 2px; font-size: 17px; font-weight: 600; color: var(--heading); }
+  .card .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--off-bg); color: var(--off); }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .note { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+  .error { margin: 12px 0 0; padding: 9px 12px; border-radius: 9px; background: var(--bad-bg); color: var(--bad); font-size: 13px; word-break: break-word; }
+  .warning { margin: 12px 0 0; padding: 9px 12px; border-radius: 9px; background: var(--warn-bg); color: var(--warn); font-size: 13px; word-break: break-word; }
+  .empty { color: var(--muted); margin: 14px 0 0; }
+
+  /* Calendar toolbar */
+  .cal-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cal-head h3 { margin: 0 6px 0 0; font-size: 20px; font-weight: 600; color: var(--heading); min-width: 9ch; }
+  .btn { border-color: var(--line); padding: 5px 12px; font-size: 14px; }
+  .btn:not(:disabled):hover { border-color: var(--muted); }
+  .btn.icon { padding: 5px 11px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg button { border-radius: 0; padding: 5px 12px; font-size: 14px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--primary); color: var(--primary-text); }
+  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+
+  /* Events not tied to a single day (a month or a year) */
+  .loose { margin: 0 0 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--dim); }
+  .loose h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .loose .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Month grid */
+  .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--line); gap: 1px; }
+  .grid .dow { background: var(--dim); padding: 6px 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .grid .day { background: var(--card); min-height: 104px; padding: 4px 5px 6px; min-width: 0; }
+  .grid .day.out { background: var(--dim); }
+  .grid .day.out .num { color: var(--muted); opacity: .6; }
+  .grid .num { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 4px; border-radius: 12px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+  .grid .day.today .num { background: var(--gold); color: #2b1d00; }
+  .grid .day .chip { display: block; width: 100%; margin-top: 3px; }
+
+  .chip { text-align: left; font-size: 12.5px; font-weight: 600; line-height: 1.3; padding: 3px 7px; border-radius: 6px; background: var(--chip-bg); color: var(--chip); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; }
+  .chip.span { background: var(--warn-bg); color: var(--warn); }
+  .chip.loose-chip { background: var(--warn-bg); color: var(--warn); }
+  .chip.cancelled { background: var(--off-bg); color: var(--off); text-decoration: line-through; font-weight: 500; }
+  .chip:hover { filter: brightness(.95); }
+  .chip:focus-visible { outline-offset: 0; }
+  .chip .t { font-weight: 500; opacity: .8; margin-right: 4px; }
+
+  @media (max-width: 700px) {
+    .grid .day { min-height: 64px; padding: 3px; }
+    .grid .dow { padding: 4px 2px; text-align: center; font-size: 11px; letter-spacing: 0; }
+    .chip { font-size: 11px; padding: 2px 4px; }
+  }
+
+  /* List view */
+  .list { margin: 0; padding: 0; list-style: none; }
+  .list li { display: grid; grid-template-columns: 150px 1fr; gap: 4px 16px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .list li:first-child { border-top: 0; }
+  .list .when { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .list .when b { display: block; color: var(--text); font-weight: 600; }
+  .list .what { min-width: 0; }
+  .list .title { font: inherit; font-weight: 600; padding: 0; text-align: left; color: var(--heading); }
+  .list .title:hover { text-decoration: underline; }
+  .list .title.cancelled { text-decoration: line-through; color: var(--muted); }
+  .list .more { margin: 1px 0 0; font-size: 14px; color: var(--muted); }
+  .badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--off-bg); color: var(--off); vertical-align: 1px; }
+  @media (max-width: 560px) { .list li { grid-template-columns: 1fr; } }
+
+  /* Event details */
+  dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; background: var(--card); color: var(--text); font: inherit; }
+  dialog::backdrop { background: rgba(0, 20, 34, .55); }
+  dialog h3 { margin: 0 0 2px; font-size: 19px; color: var(--heading); }
+  dialog .when-line { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  dialog h4 { margin: 18px 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .msg { margin: 0 0 8px; padding: 9px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 14px; }
+  .msg .meta { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .msg .body { white-space: pre-wrap; word-break: break-word; }
+  .history { margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+  .history li { padding: 3px 0; }
+  .history b { color: var(--text); text-transform: capitalize; }
+  .dlg-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .dlg-actions button { background: var(--primary); color: var(--primary-text); }
+  .dlg-actions button:hover { background: var(--primary-hover); }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <img class="logo" src="seth-logo-dark.png" alt="Seth Christian Education Institute">
+    <span class="divider" aria-hidden="true"></span>
+    <div>
+      <h1>Agent Dashboard</h1>
+      <p>What the school's AI administrator keeps up to date</p>
+    </div>
+  </div>
+  <div class="stripe"></div>
+</header>
+
+<main>
+  <!-- To add a tab: add a button here, a matching tabpanel below, and an entry in `tabs` in the script. -->
+  <div class="main-tabs" role="tablist" aria-label="What the agent maintains">
+    <button role="tab" id="tab-calendar" aria-controls="panel-calendar" aria-selected="true">School calendar</button>
+  </div>
+
+  <section id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" class="card">
+    <div class="row">
+      <div>
+        <h2>School calendar</h2>
+        <p class="sub" style="margin-bottom:12px">Built from the messages in the school's WhatsApp groups. It changes as the plans do.</p>
+      </div>
+      <span class="spacer"></span>
+      <span id="cal-pill" class="pill" role="status">Checking…</span>
+    </div>
+
+    <div class="cal-head">
+      <button class="btn icon" id="cal-prev" aria-label="Previous month">&#8249;</button>
+      <button class="btn icon" id="cal-next" aria-label="Next month">&#8250;</button>
+      <h3 id="cal-title" aria-live="polite"></h3>
+      <button class="btn" id="cal-today">Today</button>
+      <span class="spacer"></span>
+      <label class="check"><input type="checkbox" id="cal-cancelled"> Show cancelled</label>
+      <div class="seg" role="group" aria-label="View">
+        <button id="view-month" aria-pressed="true">Month</button>
+        <button id="view-list" aria-pressed="false">List</button>
+      </div>
+    </div>
+
+    <div id="cal-error" class="error" hidden></div>
+    <div id="cal-warning" class="warning" hidden></div>
+    <div id="cal-loose" class="loose" hidden><h4 id="cal-loose-title"></h4><div class="chips" id="cal-loose-chips"></div></div>
+    <div id="cal-month" class="grid"></div>
+    <ul id="cal-list" class="list" hidden></ul>
+    <p id="cal-empty" class="empty" hidden></p>
+  </section>
+</main>
+
+<dialog id="event-dialog" aria-labelledby="ev-title">
+  <h3 id="ev-title"></h3>
+  <p class="when-line" id="ev-when"></p>
+  <p id="ev-details" hidden></p>
+  <div id="ev-error" class="warning" hidden></div>
+  <div id="ev-sources"></div>
+  <div id="ev-history"></div>
+  <form method="dialog" class="dlg-actions"><button autofocus>Close</button></form>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const DAY_MS = 86400000;
+
+async function api(path) {
+  const resp = await fetch(path);
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(body.detail || resp.statusText);
+  return body;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+/* ---------- Dates ----------
+   The agent's dates are plain YYYY-MM-DD days, so they are handled as UTC
+   midnights and never shifted by the browser's timezone. */
+const iso = (d) => d.toISOString().slice(0, 10);
+const parse = (s) => new Date(s + "T00:00:00Z");
+const fmtDay = (s, opts) => parse(s).toLocaleDateString([], Object.assign({ timeZone: "UTC" }, opts));
+const monthStart = (y, m) => new Date(Date.UTC(y, m, 1));
+function localToday() {
+  const n = new Date();
+  return iso(new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())));
+}
+
+function ago(isoTime) {
+  const s = Math.max(0, (Date.now() - new Date(isoTime)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  const d = Math.round(s / 86400);
+  return d === 1 ? "1 day ago" : d + " days ago";
+}
+const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+/* ---------- Tabs ----------
+   Each tab is {id, refresh, interval}. Its button is #tab-<id>, its panel is
+   #panel-<id>, and the URL hash remembers which one is open. */
+const tabs = [
+  { id: "calendar", refresh: refreshCalendar, interval: 5000 },
+];
+let activeTab = tabs[0].id;
+
+function selectTab(id, focus) {
+  if (!tabs.some((t) => t.id === id)) id = tabs[0].id;
+  activeTab = id;
+  for (const t of tabs) {
+    const on = t.id === id;
+    $("tab-" + t.id).setAttribute("aria-selected", on);
+    $("tab-" + t.id).tabIndex = on ? 0 : -1;
+    $("panel-" + t.id).hidden = !on;
+  }
+  if (focus) $("tab-" + id).focus();
+  history.replaceState(null, "", "#" + id);
+  tabs.find((t) => t.id === id).refresh();
+}
+
+tabs.forEach((t, i) => {
+  const button = $("tab-" + t.id);
+  button.onclick = () => selectTab(t.id);
+  button.onkeydown = (e) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      selectTab(tabs[e.key === "Home" ? 0 : tabs.length - 1].id, true);
+    } else if (step) {
+      e.preventDefault();
+      selectTab(tabs[(i + step + tabs.length) % tabs.length].id, true);
+    }
+  };
+  setInterval(() => { if (activeTab === t.id && !document.hidden) t.refresh(); }, t.interval);
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tabs.find((t) => t.id === activeTab).refresh(); });
+
+/* ---------- School calendar ---------- */
+const narrow = matchMedia("(max-width: 700px)");
+const cal = {
+  year: new Date().getFullYear(),
+  month: new Date().getMonth(),
+  view: narrow.matches ? "list" : "month",
+  showCancelled: false,
+  today: localToday(),
+  events: [],
+  health: null,
+  error: "",
+  loaded: false,
+  seen: "",
+};
+
+function gridRange() {
+  const first = monthStart(cal.year, cal.month);
+  const start = new Date(first.getTime() - first.getUTCDay() * DAY_MS);
+  const last = new Date(Date.UTC(cal.year, cal.month + 1, 0));
+  const end = new Date(last.getTime() + (6 - last.getUTCDay()) * DAY_MS);
+  return [start, end];
+}
+
+async function refreshCalendar() {
+  const [start, end] = gridRange();
+  const key = `${iso(start)}/${iso(end)}`;
+  try {
+    const [c, h] = await Promise.all([
+      api(`calendar?from=${iso(start)}&to=${iso(end)}&include_cancelled=true`),
+      api("health"),
+    ]);
+    if (key !== `${iso(gridRange()[0])}/${iso(gridRange()[1])}`) return; // the month changed meanwhile
+    const fingerprint = JSON.stringify([c, h.last_poll_at]);
+    cal.today = c.today || cal.today;
+    cal.events = c.events;
+    cal.health = h;
+    cal.error = "";
+    if (!cal.loaded) {
+      cal.loaded = true;
+      const t = parse(cal.today);
+      cal.year = t.getUTCFullYear();
+      cal.month = t.getUTCMonth();
+      cal.seen = "";
+      return refreshCalendar();
+    }
+    if (fingerprint === cal.seen) { renderCalendarStatus(); return; }
+    cal.seen = fingerprint;
+  } catch (e) {
+    cal.error = e.message;
+    cal.health = null;
+  }
+  renderCalendar();
+}
+
+function visibleEvents() {
+  return cal.events.filter((e) => cal.showCancelled || e.status !== "cancelled");
+}
+
+function eventChip(e, extraClass) {
+  const chip = el("button", "chip " + (extraClass || ""));
+  if (e.time) chip.append(el("span", "t", e.time));
+  chip.append(e.title);
+  if (e.status === "cancelled") chip.classList.add("cancelled");
+  chip.title = e.title + (e.details ? ": " + e.details : "");
+  chip.onclick = () => openEvent(e.id);
+  return chip;
+}
+
+function renderCalendar() {
+  const monthName = monthStart(cal.year, cal.month).toLocaleDateString([], { month: "long", year: "numeric", timeZone: "UTC" });
+  $("cal-title").textContent = monthName;
+  $("view-month").setAttribute("aria-pressed", cal.view === "month");
+  $("view-list").setAttribute("aria-pressed", cal.view === "list");
+  $("cal-error").hidden = !cal.error;
+  $("cal-error").textContent = cal.error ? "Can't reach the agent (" + cal.error + "). Is `seth-agent run` running?" : "";
+  renderCalendarStatus();
+
+  const first = iso(monthStart(cal.year, cal.month));
+  const last = iso(new Date(Date.UTC(cal.year, cal.month + 1, 0)));
+  const events = visibleEvents();
+  const inMonth = events.filter((e) => e.date_end >= first && e.date_start <= last);
+  const loose = inMonth.filter((e) => e.precision === "month" || e.precision === "year");
+  const dated = inMonth.filter((e) => e.precision !== "month" && e.precision !== "year");
+
+  const looseBox = $("cal-loose");
+  looseBox.hidden = cal.view !== "month" || !loose.length;
+  $("cal-loose-title").textContent = "Sometime in " + monthStart(cal.year, cal.month).toLocaleDateString([], { month: "long", timeZone: "UTC" }) + " (no exact day yet)";
+  $("cal-loose-chips").replaceChildren(...loose.map((e) => eventChip(e, "loose-chip")));
+
+  $("cal-month").hidden = cal.view !== "month";
+  $("cal-list").hidden = cal.view !== "list";
+  if (cal.view === "month") renderGrid(dated);
+  else renderList(inMonth);
+
+  const empty = cal.loaded && !cal.error && inMonth.length === 0;
+  $("cal-empty").hidden = !empty;
+  $("cal-empty").textContent = empty ? "Nothing on the calendar for " + monthName + "." : "";
+}
+
+function renderCalendarStatus() {
+  const h = cal.health, pill = $("cal-pill");
+  if (!h) {
+    pill.textContent = cal.error ? "Agent unreachable" : "Checking…";
+    pill.className = "pill " + (cal.error ? "bad" : "");
+    $("cal-warning").hidden = true;
+    return;
+  }
+  const stale = !h.last_poll_at || Date.now() - new Date(h.last_poll_at) > 3 * 60 * 1000;
+  pill.textContent = stale ? "Not checking for messages" : "Up to date · checked " + ago(h.last_poll_at);
+  pill.className = "pill " + (stale ? "warn" : "ok");
+  const problem = h.last_extraction_error
+    ? "Some messages couldn't be read, so the calendar may be missing something (" + h.last_extraction_error.error + ")."
+    : "";
+  $("cal-warning").hidden = !problem;
+  $("cal-warning").textContent = problem;
+}
+
+function renderGrid(events) {
+  const [start, end] = gridRange();
+  const grid = $("cal-month");
+  const cells = [];
+  for (const name of ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]) {
+    const h = el("div", "dow", name);
+    cells.push(h);
+  }
+  for (let t = start.getTime(); t <= end.getTime(); t += DAY_MS) {
+    const d = new Date(t), day = iso(d);
+    const cell = el("div", "day");
+    if (d.getUTCMonth() !== cal.month) cell.classList.add("out");
+    if (day === cal.today) cell.classList.add("today");
+    const num = el("span", "num", d.getUTCDate());
+    num.setAttribute("aria-label", fmtDay(day, { weekday: "long", month: "long", day: "numeric" }));
+    cell.append(num);
+    for (const e of events) {
+      if (e.date_start <= day && day <= e.date_end) cell.append(eventChip(e, e.precision === "day" ? "" : "span"));
+    }
+    cells.push(cell);
+  }
+  grid.replaceChildren(...cells);
+}
+
+function rangeLabel(e) {
+  const opts = { month: "short", day: "numeric" };
+  if (e.precision === "month") return [fmtDay(e.date_start, { month: "long", year: "numeric" }), "Date to be set"];
+  if (e.precision === "year") return [fmtDay(e.date_start, { year: "numeric" }), "Date to be set"];
+  if (e.precision === "day") return [fmtDay(e.date_start, Object.assign({ weekday: "short" }, opts)), null];
+  if (e.precision === "week") return ["Week of " + fmtDay(e.date_start, opts), fmtDay(e.date_start, opts) + " – " + fmtDay(e.date_end, opts)];
+  return [fmtDay(e.date_start, opts) + " – " + fmtDay(e.date_end, opts), null];
+}
+
+function renderList(events) {
+  const items = events.map((e) => {
+    const li = el("li");
+    const [main, sub] = rangeLabel(e);
+    const w = el("div", "when");
+    w.append(el("b", null, main));
+    if (sub) w.append(sub);
+    if (e.time) w.append(el("div", null, e.time));
+    const what = el("div", "what");
+    const title = el("button", "title" + (e.status === "cancelled" ? " cancelled" : ""), e.title);
+    title.onclick = () => openEvent(e.id);
+    what.append(title);
+    if (e.status === "cancelled") what.append(el("span", "badge", "Cancelled"));
+    if (e.details) what.append(el("p", "more", e.details));
+    li.append(w, what);
+    return li;
+  });
+  $("cal-list").replaceChildren(...items);
+}
+
+async function openEvent(id) {
+  const e = cal.events.find((x) => x.id === id);
+  const dlg = $("event-dialog");
+  $("ev-title").textContent = e ? e.title : "Event #" + id;
+  const [main, sub] = e ? rangeLabel(e) : ["", null];
+  $("ev-when").textContent = [main, sub, e && e.time, e && e.status === "cancelled" ? "Cancelled" : null].filter(Boolean).join(" · ");
+  $("ev-details").hidden = !(e && e.details);
+  $("ev-details").textContent = (e && e.details) || "";
+  showEventError("");
+  $("ev-sources").replaceChildren();
+  $("ev-history").replaceChildren();
+  if (!dlg.open) dlg.showModal();
+  try {
+    const full = await api("events/" + id);
+    if (!dlg.open) return;
+    renderEventDetail(full);
+  } catch (err) {
+    showEventError("Couldn't load the messages behind this event: " + err.message);
+  }
+}
+
+function showEventError(text) {
+  $("ev-error").hidden = !text;
+  $("ev-error").textContent = text;
+}
+
+function renderEventDetail(full) {
+  const src = $("ev-sources");
+  src.replaceChildren(el("h4", null, "From the messages"));
+  for (const s of full.sources) {
+    const box = el("div", "msg");
+    if (s.message) {
+      box.append(el("div", "meta", `${s.message.sender} · ${s.message.group} · ${when(s.message.sent_at)} · ${s.role}`));
+      box.append(el("div", "body", s.message.body || `(${s.message.type} with no text)`));
+    } else {
+      box.append(el("div", "meta", "This message is no longer available (" + s.role + ")"));
+    }
+    src.append(box);
+  }
+  const hist = $("ev-history");
+  hist.replaceChildren(el("h4", null, "History"));
+  const ul = el("ul", "history");
+  for (const h of full.history) {
+    const li = el("li");
+    li.append(el("b", null, h.op), ` · ${when(h.at)}${h.reason ? " · " + h.reason : ""}`);
+    ul.append(li);
+  }
+  hist.append(ul);
+}
+
+function go(delta) {
+  const d = monthStart(cal.year, cal.month + delta);
+  cal.year = d.getUTCFullYear();
+  cal.month = d.getUTCMonth();
+  cal.seen = "";
+  renderCalendar();
+  refreshCalendar();
+}
+$("cal-prev").onclick = () => go(-1);
+$("cal-next").onclick = () => go(1);
+$("cal-today").onclick = () => {
+  const t = parse(cal.today);
+  go((t.getUTCFullYear() - cal.year) * 12 + t.getUTCMonth() - cal.month);
+};
+$("cal-cancelled").onchange = (e) => { cal.showCancelled = e.target.checked; renderCalendar(); };
+$("view-month").onclick = () => { cal.view = "month"; renderCalendar(); };
+$("view-list").onclick = () => { cal.view = "list"; renderCalendar(); };
+
+selectTab(location.hash.slice(1));
+renderCalendar();
+</script>
+</body>
+</html>

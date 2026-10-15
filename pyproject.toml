@@ -26,6 +26,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "seth_agent.memory" = ["schema.sql"]
+"seth_agent" = ["dashboard/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
