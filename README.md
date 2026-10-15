@@ -22,7 +22,8 @@ seth-agent is the school's administrator, and it doesn't forget. It watches the 
 flowchart LR
     F1["seth-feed<br/>WhatsApp group messages"] --> A
     F2["Future feeds<br/>photos, forms, ..."] -.-> A
-    A(["seth-agent"]) <--> C["Claude"]
+    A(["seth-agent"]) <--> C["Claude<br/>(SETH_PROVIDER=anthropic)"]
+    A <--> L["Local model on this machine<br/>Ollama, LM Studio, ...<br/>(SETH_PROVIDER=local)"]
     A --> M[("School memory")]
     M --> CAL["School calendar"]
     M -.-> UPD["Latest updates"]
@@ -30,7 +31,7 @@ flowchart LR
     M -.-> OUT["Newsletters, yearbook,<br/>video compilations"]
 ```
 
-Solid lines work today. Dotted lines are planned (see [What's next](#whats-next)).
+The agent reads the messages with either Claude or a model running on the same machine, whichever `SETH_PROVIDER` selects (see [Running a local model](#running-a-local-model)). Solid lines work today. Dotted lines are planned (see [What's next](#whats-next)).
 
 ## What it maintains
 
