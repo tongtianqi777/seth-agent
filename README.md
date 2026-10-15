@@ -269,7 +269,10 @@ Local models read dates and decide between "new event" and "update" less reliabl
 ```bash
 SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/calendar_examples.py
 SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/volunteering_examples.py
+SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/bilingual_examples.py
 ```
+
+The third one (Chinese and mixed messages, repeats across groups, prompt injection) is the hardest, and the best test of a model.
 
 The provider is chosen for the whole agent. Switching it doesn't redo old messages: they stay processed.
 
