@@ -39,6 +39,12 @@ def test_local_parses_and_sends_schema():
     assert body["messages"][1] == {"role": "user", "content": "hello"}
 
 
+def test_local_sends_max_tokens():
+    llm, seen = local(reply('{"items": []}'), max_tokens=1234)
+    llm.parse("s", "p", Answer)
+    assert seen[0]["max_tokens"] == 1234
+
+
 def test_local_strips_reasoning_and_code_fences():
     llm, _ = local(reply('<think>hm\n{"items": []}</think>\n```json\n{"items": ["x"]}\n```'))
     assert llm.parse("s", "p", Answer).items == ["x"]
@@ -89,7 +95,11 @@ def test_build_llm_picks_provider(monkeypatch):
     monkeypatch.setenv("SETH_PROVIDER", "local")
     monkeypatch.setenv("SETH_LOCAL_MODEL", "gemma")
     llm = build_llm(Config.from_env())
-    assert isinstance(llm, LocalLLM) and llm.model == "gemma"
+    assert isinstance(llm, LocalLLM) and llm.model == "gemma" and llm.max_tokens == 16000
+
+    monkeypatch.setenv("SETH_LOCAL_MAX_TOKENS", "32000")
+    assert build_llm(Config.from_env()).max_tokens == 32000
+    monkeypatch.delenv("SETH_LOCAL_MAX_TOKENS")
 
     monkeypatch.setenv("SETH_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")

@@ -70,7 +70,8 @@ tests/
 └── test_api.py            HTTP responses
 evals/
 ├── calendar_examples.py     Live check against Claude using the examples from the spec
-└── volunteering_examples.py Live check of "it's me this week" style messages in a volunteering group
+├── volunteering_examples.py Live check of "it's me this week" style messages in a volunteering group
+└── bilingual_examples.py    The harder set: Chinese and mixed messages, repeats across groups, prompt injection. The one to compare models with
 ```
 
 Each module has one job, and only `MemoryStore` writes to memory.db.
@@ -232,7 +233,9 @@ How the tests are set up:
 - **Fake feed.** `tests/fakefeed.py` implements the parts of seth-feed the agent uses (`/health`, `/messages`, `/messages/new`, `/messages/{chat_jid}/{message_id}`) in memory, including edits, albums sent again and an outage switch. If seth-feed's behaviour changes (see its `docs/CONSUMING.md`), update it to match.
 - **No Claude.** `test_agent.py` subclasses `CalendarExtractor` as `ScriptedCalendar`, replacing `extract()` with a function that returns canned `CalendarOps`. The prompt is still built, so tests can check what Claude would see (`ext.prompts`).
 
-### The live eval
+### The live evals
+
+Three scripts in `evals/` run messages through the real model and check the calendar. `calendar_examples.py` and `volunteering_examples.py` are short English checks. `bilingual_examples.py` is the harder set, and the one to use when choosing a model: Chinese dates ("下下周五"), mixed Chinese/English messages, the same news posted in two groups in two languages (must stay one event), a drop-out that must update rather than duplicate, and messages that try to inject instructions (the calendar must not change). Each of its scenarios starts from an empty database, and you can run one by name: `evals/bilingual_examples.py injection`. All three take the model from the environment (`SETH_PROVIDER` and friends). The rest of this section describes `calendar_examples.py`.
 
 `evals/calendar_examples.py` puts the example messages from the original spec into a temporary database, sends them through the real extractor, then sends a follow-up ("dad's flight got moved to 10/20") and checks the results:
 

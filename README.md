@@ -243,6 +243,7 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_LOCAL_MODEL` | `qwen3:30b-a3b` | The model name as the local server knows it (provider `local`) |
 | `SETH_LOCAL_API_KEY` | (none) | Only if your local server requires a key |
 | `SETH_LOCAL_TIMEOUT` | `600` | Seconds to wait for the local model to answer one batch |
+| `SETH_LOCAL_MAX_TOKENS` | `16000` | The most the local model may write for one batch, thinking included. A model that reasons at length can hit this before it answers, which fails the batch ("hit max_tokens before finishing"). Raise it if you see that |
 | `SETH_BATCH_SIZE` | `20` | Messages per request to the model. Lower it (say `8`) for a local model |
 | `SETH_VOLUNTEERING_GROUPS` | `Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am.` | WhatsApp groups to treat as volunteering groups, as `Name=usual routine` entries separated by `;`. The routine is optional. Setting it replaces the default (so include Preschool P.E. Teachers and its routine if you still want them); set it empty for none |
 | `SETH_API_HOST` / `SETH_API_PORT` | `127.0.0.1` / `8765` | Where the HTTP API listens |
@@ -255,7 +256,7 @@ SETH_POLL_SECONDS=60 SETH_EFFORT=low .venv/bin/seth-agent run
 
 ## Running a local model
 
-Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, a Qwen3 model in the 30B class at 4-bit is a good place to start.
+Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, a Qwen3 model in the 30B class at 4-bit is a good place to start. The full walkthrough is in [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md), and the reasoning behind the model choice in [docs/LOCAL_MODEL_CHOICE.md](docs/LOCAL_MODEL_CHOICE.md).
 
 ```bash
 ollama pull qwen3:30b-a3b
@@ -269,7 +270,10 @@ Local models read dates and decide between "new event" and "update" less reliabl
 ```bash
 SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/calendar_examples.py
 SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/volunteering_examples.py
+SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/bilingual_examples.py
 ```
+
+The third one (Chinese and mixed messages, repeats across groups, prompt injection) is the hardest, and the best test of a model.
 
 The provider is chosen for the whole agent. Switching it doesn't redo old messages: they stay processed.
 
@@ -316,3 +320,5 @@ The school's chats contain messages from parents, students and staff, so the age
 | [docs/API.md](docs/API.md) | Building an app or a tool on top of the school calendar: every endpoint, field and status code |
 | [docs/MEMORY.md](docs/MEMORY.md) | How the memory database is laid out, with ready-to-run SQL queries |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Working on the agent: architecture, how extraction works, testing, and adding new kinds of memory |
+| [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md) | Running a local model with Ollama on a Mac, step by step |
+| [docs/LOCAL_MODEL_CHOICE.md](docs/LOCAL_MODEL_CHOICE.md) | Which local models to try, the reasoning behind the shortlist, and how to decide between them |

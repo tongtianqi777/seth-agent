@@ -168,6 +168,10 @@ def _json_text(text: str) -> str:
 def build_llm(config) -> LLM:
     if config.provider == "local":
         return LocalLLM(
-            config.local_model, base_url=config.local_url, api_key=config.local_api_key, timeout=config.local_timeout
+            config.local_model,
+            base_url=config.local_url,
+            api_key=config.local_api_key,
+            timeout=config.local_timeout,
+            max_tokens=config.local_max_tokens,
         )
     return AnthropicLLM(config.model, config.effort)
