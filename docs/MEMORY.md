@@ -1,6 +1,6 @@
 # Memory database
 
-This document describes what seth-agent remembers and how it's stored: the tables, the rules for writing to them, and SQL you can run against them. For the HTTP API built on top of this, see [API.md](API.md). For the code, see the [development guide](DEVELOPMENT.md).
+seth-agent is the school's AI administrator, and this memory is where it keeps what it knows. This document describes what it remembers and how it's stored: the tables, the rules for writing to them, and SQL you can run against them. For the HTTP API built on top of this, see [API.md](API.md). For the code, see the [development guide](DEVELOPMENT.md).
 
 The source of truth is [src/seth_agent/memory/schema.sql](../src/seth_agent/memory/schema.sql). The read and write logic is in [src/seth_agent/memory/store.py](../src/seth_agent/memory/store.py).
 
@@ -8,8 +8,8 @@ The source of truth is [src/seth_agent/memory/schema.sql](../src/seth_agent/memo
 
 | Store | Location | Owner | Contents |
 |---|---|---|---|
-| Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the calendar, plus the agent's own bookkeeping |
-| Message feed | `seth-feed` API (`SETH_FEED_URL`) | seth-ingestion | the raw WhatsApp messages. seth-agent **only reads** them. See seth-ingestion's [CONSUMING.md](../../seth-ingestion/docs/CONSUMING.md) |
+| Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the school calendar, plus the agent's own bookkeeping. Other memories (latest updates, media) will be added here |
+| Message feed | `seth-feed` API (`SETH_FEED_URL`) | seth-ingestion | the raw messages from the school's WhatsApp groups. seth-agent **only reads** them. See seth-ingestion's [CONSUMING.md](../../seth-ingestion/docs/CONSUMING.md) |
 
 The memory database is SQLite in WAL mode. The agent creates it on first run and brings the schema up to date on every start. You can read it with `sqlite3` while the agent is running.
 

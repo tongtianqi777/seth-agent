@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "seth-agent"
 version = "0.1.0"
-description = "Private agent that turns ingested WhatsApp messages into a structured calendar memory"
+description = "AI administrator for Seth Christian Education Institute: turns the school's data feeds into maintained records such as the school calendar"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=1.13",

@@ -1,5 +1,7 @@
 # Development guide
 
+seth-agent is an AI agent that acts as the administrator of Seth Christian Education Institute. It consumes data feeds, such as seth-feed's WhatsApp messages, and maintains the school's key information and assets. Today that is the school calendar. Latest updates and a media library come next, and later newsletters, a yearbook and video compilations built on top of them.
+
 This guide is for working on seth-agent itself. To install and run it, see the [README](../README.md). The memory database is described in [MEMORY.md](MEMORY.md), and the HTTP API in [API.md](API.md).
 
 ## Contents
@@ -17,7 +19,7 @@ This guide is for working on seth-agent itself. To install and run it, see the [
 
 ## The big picture
 
-seth-agent is the second half of a two-process pipeline:
+seth-agent consumes data feeds and turns them into school memory. Today there is one feed, seth-feed, which carries the school's WhatsApp group messages, so the pipeline is two processes:
 
 ```mermaid
 flowchart LR
@@ -258,14 +260,14 @@ print(ext.build_prompt(pending[:20]))
 
 ## Adding a new kind of memory
 
-The calendar is the first **extractor**. Each future kind of memory (what's in photos, personal updates, people and places) is another extractor that works the same way. Here's the whole recipe, using a hypothetical "personal updates" memory (*"I started a new job"*, *"we adopted a cat"*) as the example.
+The calendar is the first **extractor**. Each future kind of memory (the latest school updates, the media library, people and places) is another extractor that works the same way. Here's the whole recipe, using a hypothetical "school updates" memory (*"The library is getting new shelves"*, *"Mrs. Lee is joining the choir"*) as the example.
 
 **1. Add its tables** to [memory/schema.sql](../src/seth_agent/memory/schema.sql):
 
 ```sql
 CREATE TABLE IF NOT EXISTS updates (
     id         INTEGER PRIMARY KEY,
-    person     TEXT NOT NULL,
+    topic      TEXT NOT NULL,
     summary    TEXT NOT NULL,
     happened   TEXT,                    -- YYYY-MM-DD if known
     created_at TEXT NOT NULL
