@@ -15,7 +15,8 @@ This is the reference for apps and tools that read the school calendar from seth
 
 | Endpoint | Purpose |
 |---|---|
-| [`GET /calendar`](#get-calendar) | Events in a date range, grouped for display |
+| [`GET /calendar`](#get-calendar) | Events in a date range, grouped for display. The school calendar, or a volunteering group's |
+| [`GET /volunteering`](#get-volunteering) | The volunteering calendars |
 | [`GET /events/{id}`](#get-eventsid) | One event, with the messages behind it and its history |
 | [`GET /health`](#get-health) | Whether the agent is keeping up |
 
@@ -81,11 +82,15 @@ Returns the events whose span **overlaps** a date range. A query for November 10
 | `from` | today (local) | First date of the range, inclusive |
 | `to` | no limit | Last date of the range, inclusive |
 | `include_cancelled` | `false` | Also return cancelled events |
+| `group` | none | The name of a volunteering group, to read its volunteering calendar instead of the school calendar. Matched ignoring case. See [`GET /volunteering`](#get-volunteering) |
+
+Without `group`, only school events are returned. Volunteering events never appear in the school calendar.
 
 **Response**
 
 | Field | Description |
 |---|---|
+| `group` | The volunteering group's name, as listed by `/volunteering`. Only present when `group` was asked for |
 | `today` | Today's date in the agent's timezone |
 | `from`, `to` | The range that was applied. `to` is `null` when there's no upper limit |
 | `days` | Events grouped by `label`, in date order. Each entry is a compact summary: `id`, `title`, `details`, `time`, `status`, `precision`, `date_start`, `date_end` |
@@ -122,7 +127,21 @@ curl -s 'http://127.0.0.1:8765/calendar?from=2026-10-01&to=2026-11-30'
 
 An empty range returns `"days": {}` and `"events": []`, with status `200`.
 
-**Errors:** `422` if `from` or `to` isn't a valid `YYYY-MM-DD` date.
+**Errors:** `422` if `from` or `to` isn't a valid `YYYY-MM-DD` date. `404` if `group` isn't a known volunteering group.
+
+## `GET /volunteering`
+
+Lists the volunteering calendars, one per volunteering group: the groups the agent is set to treat as volunteering groups (`SETH_VOLUNTEERING_GROUPS`, in that order, so Preschool P.E. Teachers comes first by default), then any other group that still has events. A calendar with no events yet is still listed.
+
+```bash
+curl -s http://127.0.0.1:8765/volunteering
+```
+
+```json
+{ "calendars": ["Preschool P.E. Teachers"] }
+```
+
+Pass a name to [`GET /calendar`](#get-calendar) as `group` to read that calendar.
 
 ## `GET /events/{id}`
 
@@ -177,7 +196,8 @@ Tells you whether the agent is keeping up. Use it for a status light, or to chec
   "source_cursor": "43.2",
   "last_transient_error": null,
   "last_extraction_error": null,
-  "active_events": 3
+  "active_events": 3,
+  "active_volunteering_events": 2
 }
 ```
 
@@ -187,7 +207,8 @@ Tells you whether the agent is keeping up. Use it for a status light, or to chec
 | `source_cursor` | seth-feed's follow cursor for the newest message fully processed (an opaque string such as `43.2`). `null` before the first successful pass |
 | `last_transient_error` | The latest problem that will be retried, such as no API key, a rate limit or a network outage, prefixed with when it happened. It isn't cleared when things recover, so compare its time with `last_poll_at` |
 | `last_extraction_error` | The latest batch of messages that was given up on (refused or unreadable): `{id, extractor, message_ids, error, at}`, or `null` |
-| `active_events` | How many events are currently active |
+| `active_events` | How many school events are currently active |
+| `active_volunteering_events` | How many volunteering events are currently active, across all volunteering calendars |
 
 ## Examples for client code
 

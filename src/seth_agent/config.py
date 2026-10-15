@@ -8,6 +8,8 @@ from datetime import datetime, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .groups import DEFAULT_VOLUNTEERING_GROUPS, VolunteeringGroups, parse_groups
+
 DEFAULT_FEED_URL = "http://127.0.0.1:8080"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,10 +33,14 @@ class Config:
     api_host: str
     api_port: int
     tz: tzinfo
+    volunteering: VolunteeringGroups
 
     @classmethod
     def from_env(cls) -> "Config":
         env = os.environ.get
+        # "Name=usual routine; Other Name". Setting it replaces the default; set it empty for none.
+        groups = env("SETH_VOLUNTEERING_GROUPS")
+        volunteering = DEFAULT_VOLUNTEERING_GROUPS if groups is None else parse_groups(groups)
         return cls(
             feed_url=env("SETH_FEED_URL", DEFAULT_FEED_URL),
             memory_db=Path(env("SETH_MEMORY_DB", str(REPO_ROOT / "data" / "memory.db"))),
@@ -45,4 +51,5 @@ class Config:
             api_host=env("SETH_API_HOST", "127.0.0.1"),
             api_port=int(env("SETH_API_PORT", "8765")),
             tz=local_tz(),
+            volunteering=VolunteeringGroups(volunteering),
         )

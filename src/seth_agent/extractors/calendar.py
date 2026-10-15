@@ -11,11 +11,28 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel, Field
 
-from ..memory.store import MemoryStore
+from ..groups import VolunteeringGroups
+from ..memory.store import SCHOOL, SCHOOL_CALENDAR, MemoryStore
 from ..source import Message, MessageSource
 from .base import Extractor, PermanentError, TransientError
 
 log = logging.getLogger(__name__)
+
+# The rules for dates and for keeping a calendar consistent are the same for every kind of calendar.
+SHARED_RULES = """\
+Resolving dates (use each message's own local sent date):
+- A bare weekday ("on Monday") means the next such day strictly after the sent date, unless the message says "today". "This Friday" sent on a Wednesday is two days later.
+- "Tomorrow", "next week", "in two weeks", "end of the month" are relative to the sent date.
+- A month without a year ("in Nov") is the next occurrence; the current month counts.
+- Numeric dates are US-style month/day ("10/18" is October 18).
+- If you only know a rough timeframe, use the matching precision: "week" (date_start = Monday of that week), "month" (any day in the month, e.g. the 1st), "year", or "range" with explicit date_start and date_end.
+
+Keeping the calendar consistent:
+- You are shown the current calendar. If a message reschedules, adds detail to, or confirms an existing event, emit an "update" with that event_id instead of a new "add". If it calls an event off, emit a "cancel".
+- An edited message replaces the original text. Adjust or cancel the events that came from the original so the calendar reflects the edited text.
+- Never add an event that duplicates one already on the calendar. The same news is often posted in several groups (an announcement and then a class group); treat those as one event.
+
+"""
 
 SYSTEM_PROMPT = """\
 You maintain a school-community calendar for the user. You read messages from the community's WhatsApp groups (classes, committees, staff, announcements), sent by many different people, and record events that will happen in the future, so the user always has an accurate picture of what is coming up.
@@ -31,19 +48,7 @@ Do not record anything for:
 - events that were already over when the message was sent
 - vague intentions with no timeframe at all ("we should get dinner sometime")
 
-Resolving dates (use each message's own local sent date):
-- A bare weekday ("on Monday") means the next such day strictly after the sent date, unless the message says "today". "This Friday" sent on a Wednesday is two days later.
-- "Tomorrow", "next week", "in two weeks", "end of the month" are relative to the sent date.
-- A month without a year ("in Nov") is the next occurrence; the current month counts.
-- Numeric dates are US-style month/day ("10/18" is October 18).
-- If you only know a rough timeframe, use the matching precision: "week" (date_start = Monday of that week), "month" (any day in the month, e.g. the 1st), "year", or "range" with explicit date_start and date_end.
-
-Keeping the calendar consistent:
-- You are shown the current calendar. If a message reschedules, adds detail to, or confirms an existing event, emit an "update" with that event_id instead of a new "add". If it calls an event off, emit a "cancel".
-- An edited message replaces the original text. Adjust or cancel the events that came from the original so the calendar reflects the edited text.
-- Never add an event that duplicates one already on the calendar. The same news is often posted in several groups (an announcement and then a class group); treat those as one event.
-
-Writing events:
+{shared_rules}Writing events:
 - title: short and specific, naming the group or people it involves when that matters ("Dad's flight", "School closed", "Yearbook Committee meeting", "Workout session (rescheduled)").
 - details: one sentence with any useful specifics from the messages (place, flight number, which group and who said it). Optional.
 - time: the local time of day if known ("15:30", "morning"), else null.
@@ -58,6 +63,7 @@ Examples (assume each was sent Monday 2026-10-12):
 - "Dad's flight is on 10/18" -> add "Dad's flight", 2026-10-18, precision day
 - "Hello" / "I'm outside waiting for you" / "Will you be able to make it?" -> no operations
 """
+SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{shared_rules}", SHARED_RULES)
 
 
 class EventOp(BaseModel):
@@ -82,7 +88,14 @@ TRANSIENT_STATUS = {401, 403, 404, 408, 409, 429}
 
 
 class CalendarExtractor(Extractor):
+    """Keeps the school calendar, from every group that isn't a volunteering group.
+
+    VolunteeringExtractor reuses all of this for the volunteering groups, each of which has its own calendar.
+    """
+
     name = "calendar"
+    category = SCHOOL
+    system_prompt = SYSTEM_PROMPT
 
     def __init__(
         self,
@@ -93,6 +106,7 @@ class CalendarExtractor(Extractor):
         effort: str = "medium",
         batch_size: int = 20,
         client: anthropic.Anthropic | None = None,
+        volunteering: VolunteeringGroups | None = None,
     ):
         self.store = store
         self.source = source
@@ -101,10 +115,24 @@ class CalendarExtractor(Extractor):
         self.effort = effort
         self.batch_size = batch_size
         self.client = client or anthropic.Anthropic()
+        self.volunteering = volunteering or VolunteeringGroups()
 
     # -- filtering ------------------------------------------------------------
 
+    def handles_group(self, group: str) -> bool:
+        return self.volunteering.calendar_for(group) is None
+
+    def calendar_for(self, group: str) -> str:
+        """The calendar events from this group go on."""
+        return SCHOOL_CALENDAR
+
+    def group_notes(self, group: str) -> list[str]:
+        """Extra lines for the prompt about the group the batch is from."""
+        return []
+
     def wants(self, msg: Message) -> bool:
+        if not self.handles_group(msg.group):
+            return False
         # Reactions, polls and the like have no body. Some real text messages are typed `other`, so don't go by type.
         if not msg.body:
             return False
@@ -119,7 +147,7 @@ class CalendarExtractor(Extractor):
             response = self.client.beta.messages.parse(
                 model=self.model,
                 max_tokens=16000,
-                system=SYSTEM_PROMPT,
+                system=self.system_prompt,
                 messages=[{"role": "user", "content": prompt}],
                 output_format=CalendarOps,
                 output_config={"effort": self.effort},
@@ -150,14 +178,21 @@ class CalendarExtractor(Extractor):
         first = batch[0]
         context = self.source.fetch_context(first.chat_jid, first.sent_at)
         earliest = min(m.sent_at.astimezone(self.tz).date() for m in batch)
-        events = {e["id"]: e for e in self.store.list_events(date_from=earliest - timedelta(days=7))}
+        calendar = self.calendar_for(first.group)
+        events = {
+            e["id"]: e
+            for e in self.store.list_events(
+                date_from=earliest - timedelta(days=7), category=self.category, calendar=calendar
+            )
+        }
         # Events tied to messages being edited or replied to, however old.
         related = [(m.chat_jid, t) for m in batch for t in (m.edit_target_id, m.quoted_id) if t]
         for e in self.store.events_for_messages(related):
-            if e["status"] == "active":
+            if e["status"] == "active" and (e["category"], e["calendar"]) == (self.category, calendar):
                 events.setdefault(e["id"], e)
 
         parts = [f"The messages are from the WhatsApp group \"{first.group or first.chat_jid}\"."]
+        parts.extend(self.group_notes(first.group))
         parts.append("<calendar>")
         if events:
             for e in sorted(events.values(), key=lambda e: (e["date_start"], e["id"])):
@@ -189,6 +224,7 @@ class CalendarExtractor(Extractor):
 
     def apply(self, conn: sqlite3.Connection, batch: list[Message], result: CalendarOps) -> int:
         by_id = {m.message_id: m.key for m in batch}
+        calendar = self.calendar_for(batch[0].group)
         applied = 0
         for op in result.operations:
             sources = [by_id[i] for i in op.source_message_ids if i in by_id] or [m.key for m in batch]
@@ -197,10 +233,15 @@ class CalendarExtractor(Extractor):
                 if op.op == "add":
                     if not (op.title and op.date_start):
                         raise ValueError("add needs title and date_start")
-                    event_id = self.store.add_event(conn, fields, sources, op.reason)
+                    event_id = self.store.add_event(
+                        conn, fields, sources, op.reason, category=self.category, calendar=calendar
+                    )
                     log.info("added event %s: %s %s", event_id, op.date_start, op.title)
                 elif op.event_id is None:
                     raise ValueError(f"{op.op} needs event_id")
+                elif self.store.calendar_of(conn, op.event_id) != (self.category, calendar):
+                    # Claude was only shown this calendar's events, so this id is wrong.
+                    raise ValueError(f"event {op.event_id} is not on the {calendar} calendar")
                 elif op.op == "update":
                     self.store.update_event(conn, op.event_id, fields, sources, op.reason)
                     log.info("updated event %s: %s", op.event_id, op.reason)

@@ -74,6 +74,7 @@
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
   .seg button { border-radius: 0; padding: 5px 12px; font-size: 14px; color: var(--muted); }
   .seg button[aria-pressed="true"] { background: var(--primary); color: var(--primary-text); }
+  .picker { margin: 0 0 14px; max-width: 100%; flex-wrap: wrap; }
   .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
 
   /* Events not tied to a single day (a month or a year) */
@@ -153,6 +154,7 @@
   <!-- To add a tab: add a button here, a matching tabpanel below, and an entry in `tabs` in the script. -->
   <div class="main-tabs" role="tablist" aria-label="What the agent maintains">
     <button role="tab" id="tab-calendar" aria-controls="panel-calendar" aria-selected="true">School calendar</button>
+    <button role="tab" id="tab-volunteering" aria-controls="panel-volunteering" aria-selected="false">Volunteering</button>
   </div>
 
   <section id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" class="card">
@@ -162,29 +164,46 @@
         <p class="sub" style="margin-bottom:12px">Built from the messages in the school's WhatsApp groups. It changes as the plans do.</p>
       </div>
       <span class="spacer"></span>
-      <span id="cal-pill" class="pill" role="status">Checking…</span>
+      <span id="school-pill" class="pill" role="status">Checking…</span>
     </div>
+    <div id="school-calendar"></div>
+  </section>
 
-    <div class="cal-head">
-      <button class="btn icon" id="cal-prev" aria-label="Previous month">&#8249;</button>
-      <button class="btn icon" id="cal-next" aria-label="Next month">&#8250;</button>
-      <h3 id="cal-title" aria-live="polite"></h3>
-      <button class="btn" id="cal-today">Today</button>
+  <section id="panel-volunteering" role="tabpanel" aria-labelledby="tab-volunteering" class="card" hidden>
+    <div class="row">
+      <div>
+        <h2>Volunteering</h2>
+        <p class="sub" id="vol-sub" style="margin-bottom:12px">Volunteer schedules and activities, from the parent groups that organize them. Each group has its own calendar.</p>
+      </div>
       <span class="spacer"></span>
-      <label class="check"><input type="checkbox" id="cal-cancelled"> Show cancelled</label>
+      <span id="vol-pill" class="pill" role="status">Checking…</span>
+    </div>
+    <div id="vol-picker" class="seg picker" role="group" aria-label="Volunteering calendar" hidden></div>
+    <div id="vol-calendar"></div>
+  </section>
+
+  <!-- One calendar: the toolbar and the month/list views. The school and each volunteering group use a copy. -->
+  <template id="calendar-template">
+    <div class="cal-head">
+      <button class="btn icon" data-r="prev" aria-label="Previous month">&#8249;</button>
+      <button class="btn icon" data-r="next" aria-label="Next month">&#8250;</button>
+      <h3 data-r="title" aria-live="polite"></h3>
+      <button class="btn" data-r="today">Today</button>
+      <span class="spacer"></span>
+      <label class="check"><input type="checkbox" data-r="cancelled"> Show cancelled</label>
       <div class="seg" role="group" aria-label="View">
-        <button id="view-month" aria-pressed="true">Month</button>
-        <button id="view-list" aria-pressed="false">List</button>
+        <button data-r="view-month" aria-pressed="true">Month</button>
+        <button data-r="view-list" aria-pressed="false">List</button>
       </div>
     </div>
 
-    <div id="cal-error" class="error" hidden></div>
-    <div id="cal-warning" class="warning" hidden></div>
-    <div id="cal-loose" class="loose" hidden><h4 id="cal-loose-title"></h4><div class="chips" id="cal-loose-chips"></div></div>
-    <div id="cal-month" class="grid"></div>
-    <ul id="cal-list" class="list" hidden></ul>
-    <p id="cal-empty" class="empty" hidden></p>
-  </section>
+    <div class="error" data-r="error" hidden></div>
+    <div class="warning" data-r="warning" hidden></div>
+    <div class="loose" data-r="loose" hidden><h4 data-r="loose-title"></h4><div class="chips" data-r="loose-chips"></div></div>
+    <div class="grid" data-r="month"></div>
+    <ul class="list" data-r="list" hidden></ul>
+    <p class="empty" data-r="empty" hidden></p>
+  </template>
 </main>
 
 <dialog id="event-dialog" aria-labelledby="ev-title">
@@ -241,7 +260,8 @@ const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numer
    Each tab is {id, refresh, interval}. Its button is #tab-<id>, its panel is
    #panel-<id>, and the URL hash remembers which one is open. */
 const tabs = [
-  { id: "calendar", refresh: refreshCalendar, interval: 5000 },
+  { id: "calendar", refresh: () => school.refresh(), interval: 5000 },
+  { id: "volunteering", refresh: () => volunteering.refresh(), interval: 5000 },
 ];
 let activeTab = tabs[0].id;
 
@@ -276,145 +296,199 @@ tabs.forEach((t, i) => {
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tabs.find((t) => t.id === activeTab).refresh(); });
 
-/* ---------- School calendar ---------- */
+/* ---------- Calendars ----------
+   The school calendar and each volunteering calendar look and work the same, so one
+   function builds them all. `load(from, to)` fetches {c: the /calendar response, h: /health}. */
 const narrow = matchMedia("(max-width: 700px)");
-const cal = {
-  year: new Date().getFullYear(),
-  month: new Date().getMonth(),
-  view: narrow.matches ? "list" : "month",
-  showCancelled: false,
-  today: localToday(),
-  events: [],
-  health: null,
-  error: "",
-  loaded: false,
-  seen: "",
-};
 
-function gridRange() {
-  const first = monthStart(cal.year, cal.month);
-  const start = new Date(first.getTime() - first.getUTCDay() * DAY_MS);
-  const last = new Date(Date.UTC(cal.year, cal.month + 1, 0));
-  const end = new Date(last.getTime() + (6 - last.getUTCDay()) * DAY_MS);
-  return [start, end];
-}
+function createCalendar(host, { pill, load, emptyText }) {
+  host.replaceChildren($("calendar-template").content.cloneNode(true));
+  const r = (name) => host.querySelector(`[data-r="${name}"]`);
+  const cal = {
+    year: new Date().getFullYear(),
+    month: new Date().getMonth(),
+    view: narrow.matches ? "list" : "month",
+    showCancelled: false,
+    today: localToday(),
+    events: [],
+    health: null,
+    error: "",
+    loaded: false,
+    seen: "",
+    epoch: 0,
+  };
 
-async function refreshCalendar() {
-  const [start, end] = gridRange();
-  const key = `${iso(start)}/${iso(end)}`;
-  try {
-    const [c, h] = await Promise.all([
-      api(`calendar?from=${iso(start)}&to=${iso(end)}&include_cancelled=true`),
-      api("health"),
-    ]);
-    if (key !== `${iso(gridRange()[0])}/${iso(gridRange()[1])}`) return; // the month changed meanwhile
-    const fingerprint = JSON.stringify([c, h.last_poll_at]);
-    cal.today = c.today || cal.today;
-    cal.events = c.events;
-    cal.health = h;
-    cal.error = "";
-    if (!cal.loaded) {
-      cal.loaded = true;
-      const t = parse(cal.today);
-      cal.year = t.getUTCFullYear();
-      cal.month = t.getUTCMonth();
-      cal.seen = "";
-      return refreshCalendar();
+  function gridRange() {
+    const first = monthStart(cal.year, cal.month);
+    const start = new Date(first.getTime() - first.getUTCDay() * DAY_MS);
+    const last = new Date(Date.UTC(cal.year, cal.month + 1, 0));
+    const end = new Date(last.getTime() + (6 - last.getUTCDay()) * DAY_MS);
+    return [start, end];
+  }
+
+  async function refresh() {
+    const [start, end] = gridRange();
+    const key = `${cal.epoch}/${iso(start)}/${iso(end)}`;
+    const current = () => `${cal.epoch}/${iso(gridRange()[0])}/${iso(gridRange()[1])}`;
+    try {
+      const { c, h } = await load(iso(start), iso(end));
+      if (key !== current()) return; // the month (or the calendar) changed meanwhile
+      const fingerprint = JSON.stringify([c, h.last_poll_at]);
+      cal.today = c.today || cal.today;
+      cal.events = c.events;
+      cal.health = h;
+      cal.error = "";
+      if (!cal.loaded) {
+        cal.loaded = true;
+        const t = parse(cal.today);
+        cal.year = t.getUTCFullYear();
+        cal.month = t.getUTCMonth();
+        cal.seen = "";
+        return refresh();
+      }
+      if (fingerprint === cal.seen) { renderStatus(); return; }
+      cal.seen = fingerprint;
+    } catch (e) {
+      cal.error = e.message;
+      cal.health = null;
     }
-    if (fingerprint === cal.seen) { renderCalendarStatus(); return; }
-    cal.seen = fingerprint;
-  } catch (e) {
-    cal.error = e.message;
-    cal.health = null;
+    render();
   }
-  renderCalendar();
-}
 
-function visibleEvents() {
-  return cal.events.filter((e) => cal.showCancelled || e.status !== "cancelled");
-}
-
-function eventChip(e, extraClass) {
-  const chip = el("button", "chip " + (extraClass || ""));
-  if (e.time) chip.append(el("span", "t", e.time));
-  chip.append(e.title);
-  if (e.status === "cancelled") chip.classList.add("cancelled");
-  chip.title = e.title + (e.details ? ": " + e.details : "");
-  chip.onclick = () => openEvent(e.id);
-  return chip;
-}
-
-function renderCalendar() {
-  const monthName = monthStart(cal.year, cal.month).toLocaleDateString([], { month: "long", year: "numeric", timeZone: "UTC" });
-  $("cal-title").textContent = monthName;
-  $("view-month").setAttribute("aria-pressed", cal.view === "month");
-  $("view-list").setAttribute("aria-pressed", cal.view === "list");
-  $("cal-error").hidden = !cal.error;
-  $("cal-error").textContent = cal.error ? "Can't reach the agent (" + cal.error + "). Is `seth-agent run` running?" : "";
-  renderCalendarStatus();
-
-  const first = iso(monthStart(cal.year, cal.month));
-  const last = iso(new Date(Date.UTC(cal.year, cal.month + 1, 0)));
-  const events = visibleEvents();
-  const inMonth = events.filter((e) => e.date_end >= first && e.date_start <= last);
-  const loose = inMonth.filter((e) => e.precision === "month" || e.precision === "year");
-  const dated = inMonth.filter((e) => e.precision !== "month" && e.precision !== "year");
-
-  const looseBox = $("cal-loose");
-  looseBox.hidden = cal.view !== "month" || !loose.length;
-  $("cal-loose-title").textContent = "Sometime in " + monthStart(cal.year, cal.month).toLocaleDateString([], { month: "long", timeZone: "UTC" }) + " (no exact day yet)";
-  $("cal-loose-chips").replaceChildren(...loose.map((e) => eventChip(e, "loose-chip")));
-
-  $("cal-month").hidden = cal.view !== "month";
-  $("cal-list").hidden = cal.view !== "list";
-  if (cal.view === "month") renderGrid(dated);
-  else renderList(inMonth);
-
-  const empty = cal.loaded && !cal.error && inMonth.length === 0;
-  $("cal-empty").hidden = !empty;
-  $("cal-empty").textContent = empty ? "Nothing on the calendar for " + monthName + "." : "";
-}
-
-function renderCalendarStatus() {
-  const h = cal.health, pill = $("cal-pill");
-  if (!h) {
-    pill.textContent = cal.error ? "Agent unreachable" : "Checking…";
-    pill.className = "pill " + (cal.error ? "bad" : "");
-    $("cal-warning").hidden = true;
-    return;
+  function visibleEvents() {
+    return cal.events.filter((e) => cal.showCancelled || e.status !== "cancelled");
   }
-  const stale = !h.last_poll_at || Date.now() - new Date(h.last_poll_at) > 3 * 60 * 1000;
-  pill.textContent = stale ? "Not checking for messages" : "Up to date · checked " + ago(h.last_poll_at);
-  pill.className = "pill " + (stale ? "warn" : "ok");
-  const problem = h.last_extraction_error
-    ? "Some messages couldn't be read, so the calendar may be missing something (" + h.last_extraction_error.error + ")."
-    : "";
-  $("cal-warning").hidden = !problem;
-  $("cal-warning").textContent = problem;
-}
 
-function renderGrid(events) {
-  const [start, end] = gridRange();
-  const grid = $("cal-month");
-  const cells = [];
-  for (const name of ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]) {
-    const h = el("div", "dow", name);
-    cells.push(h);
+  function eventChip(e, extraClass) {
+    const chip = el("button", "chip " + (extraClass || ""));
+    if (e.time) chip.append(el("span", "t", e.time));
+    chip.append(e.title);
+    if (e.status === "cancelled") chip.classList.add("cancelled");
+    chip.title = e.title + (e.details ? ": " + e.details : "");
+    chip.onclick = () => openEvent(e);
+    return chip;
   }
-  for (let t = start.getTime(); t <= end.getTime(); t += DAY_MS) {
-    const d = new Date(t), day = iso(d);
-    const cell = el("div", "day");
-    if (d.getUTCMonth() !== cal.month) cell.classList.add("out");
-    if (day === cal.today) cell.classList.add("today");
-    const num = el("span", "num", d.getUTCDate());
-    num.setAttribute("aria-label", fmtDay(day, { weekday: "long", month: "long", day: "numeric" }));
-    cell.append(num);
-    for (const e of events) {
-      if (e.date_start <= day && day <= e.date_end) cell.append(eventChip(e, e.precision === "day" ? "" : "span"));
+
+  function render() {
+    const monthName = monthStart(cal.year, cal.month).toLocaleDateString([], { month: "long", year: "numeric", timeZone: "UTC" });
+    r("title").textContent = monthName;
+    r("view-month").setAttribute("aria-pressed", cal.view === "month");
+    r("view-list").setAttribute("aria-pressed", cal.view === "list");
+    r("error").hidden = !cal.error;
+    r("error").textContent = cal.error ? "Can't reach the agent (" + cal.error + "). Is `seth-agent run` running?" : "";
+    renderStatus();
+
+    const first = iso(monthStart(cal.year, cal.month));
+    const last = iso(new Date(Date.UTC(cal.year, cal.month + 1, 0)));
+    const events = visibleEvents();
+    const inMonth = events.filter((e) => e.date_end >= first && e.date_start <= last);
+    const loose = inMonth.filter((e) => e.precision === "month" || e.precision === "year");
+    const dated = inMonth.filter((e) => e.precision !== "month" && e.precision !== "year");
+
+    const looseBox = r("loose");
+    looseBox.hidden = cal.view !== "month" || !loose.length;
+    r("loose-title").textContent = "Sometime in " + monthStart(cal.year, cal.month).toLocaleDateString([], { month: "long", timeZone: "UTC" }) + " (no exact day yet)";
+    r("loose-chips").replaceChildren(...loose.map((e) => eventChip(e, "loose-chip")));
+
+    r("month").hidden = cal.view !== "month";
+    r("list").hidden = cal.view !== "list";
+    if (cal.view === "month") renderGrid(dated);
+    else renderList(inMonth);
+
+    const empty = cal.loaded && !cal.error && inMonth.length === 0;
+    r("empty").hidden = !empty;
+    r("empty").textContent = empty ? emptyText(monthName) : "";
+  }
+
+  function renderStatus() {
+    const h = cal.health;
+    if (!h) {
+      pill.textContent = cal.error ? "Agent unreachable" : "Checking…";
+      pill.className = "pill " + (cal.error ? "bad" : "");
+      r("warning").hidden = true;
+      return;
     }
-    cells.push(cell);
+    const stale = !h.last_poll_at || Date.now() - new Date(h.last_poll_at) > 3 * 60 * 1000;
+    pill.textContent = stale ? "Not checking for messages" : "Up to date · checked " + ago(h.last_poll_at);
+    pill.className = "pill " + (stale ? "warn" : "ok");
+    const problem = h.last_extraction_error
+      ? "Some messages couldn't be read, so the calendar may be missing something (" + h.last_extraction_error.error + ")."
+      : "";
+    r("warning").hidden = !problem;
+    r("warning").textContent = problem;
   }
-  grid.replaceChildren(...cells);
+
+  function renderGrid(events) {
+    const [start, end] = gridRange();
+    const cells = [];
+    for (const name of ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]) {
+      const h = el("div", "dow", name);
+      cells.push(h);
+    }
+    for (let t = start.getTime(); t <= end.getTime(); t += DAY_MS) {
+      const d = new Date(t), day = iso(d);
+      const cell = el("div", "day");
+      if (d.getUTCMonth() !== cal.month) cell.classList.add("out");
+      if (day === cal.today) cell.classList.add("today");
+      const num = el("span", "num", d.getUTCDate());
+      num.setAttribute("aria-label", fmtDay(day, { weekday: "long", month: "long", day: "numeric" }));
+      cell.append(num);
+      for (const e of events) {
+        if (e.date_start <= day && day <= e.date_end) cell.append(eventChip(e, e.precision === "day" ? "" : "span"));
+      }
+      cells.push(cell);
+    }
+    r("month").replaceChildren(...cells);
+  }
+
+  function renderList(events) {
+    const items = events.map((e) => {
+      const li = el("li");
+      const [main, sub] = rangeLabel(e);
+      const w = el("div", "when");
+      w.append(el("b", null, main));
+      if (sub) w.append(sub);
+      if (e.time) w.append(el("div", null, e.time));
+      const what = el("div", "what");
+      const title = el("button", "title" + (e.status === "cancelled" ? " cancelled" : ""), e.title);
+      title.onclick = () => openEvent(e);
+      what.append(title);
+      if (e.status === "cancelled") what.append(el("span", "badge", "Cancelled"));
+      if (e.details) what.append(el("p", "more", e.details));
+      li.append(w, what);
+      return li;
+    });
+    r("list").replaceChildren(...items);
+  }
+
+  function go(delta) {
+    const d = monthStart(cal.year, cal.month + delta);
+    cal.year = d.getUTCFullYear();
+    cal.month = d.getUTCMonth();
+    cal.seen = "";
+    render();
+    refresh();
+  }
+  r("prev").onclick = () => go(-1);
+  r("next").onclick = () => go(1);
+  r("today").onclick = () => {
+    const t = parse(cal.today);
+    go((t.getUTCFullYear() - cal.year) * 12 + t.getUTCMonth() - cal.month);
+  };
+  r("cancelled").onchange = (e) => { cal.showCancelled = e.target.checked; render(); };
+  r("view-month").onclick = () => { cal.view = "month"; render(); };
+  r("view-list").onclick = () => { cal.view = "list"; render(); };
+
+  // Forget what's shown, e.g. when the calendar behind this view changes.
+  function reset() {
+    cal.epoch++;
+    cal.events = [];
+    cal.seen = "";
+    render();
+  }
+
+  render();
+  return { refresh, reset };
 }
 
 function rangeLabel(e) {
@@ -426,40 +500,19 @@ function rangeLabel(e) {
   return [fmtDay(e.date_start, opts) + " – " + fmtDay(e.date_end, opts), null];
 }
 
-function renderList(events) {
-  const items = events.map((e) => {
-    const li = el("li");
-    const [main, sub] = rangeLabel(e);
-    const w = el("div", "when");
-    w.append(el("b", null, main));
-    if (sub) w.append(sub);
-    if (e.time) w.append(el("div", null, e.time));
-    const what = el("div", "what");
-    const title = el("button", "title" + (e.status === "cancelled" ? " cancelled" : ""), e.title);
-    title.onclick = () => openEvent(e.id);
-    what.append(title);
-    if (e.status === "cancelled") what.append(el("span", "badge", "Cancelled"));
-    if (e.details) what.append(el("p", "more", e.details));
-    li.append(w, what);
-    return li;
-  });
-  $("cal-list").replaceChildren(...items);
-}
-
-async function openEvent(id) {
-  const e = cal.events.find((x) => x.id === id);
+async function openEvent(e) {
   const dlg = $("event-dialog");
-  $("ev-title").textContent = e ? e.title : "Event #" + id;
-  const [main, sub] = e ? rangeLabel(e) : ["", null];
-  $("ev-when").textContent = [main, sub, e && e.time, e && e.status === "cancelled" ? "Cancelled" : null].filter(Boolean).join(" · ");
-  $("ev-details").hidden = !(e && e.details);
-  $("ev-details").textContent = (e && e.details) || "";
+  $("ev-title").textContent = e.title;
+  const [main, sub] = rangeLabel(e);
+  $("ev-when").textContent = [main, sub, e.time, e.status === "cancelled" ? "Cancelled" : null].filter(Boolean).join(" · ");
+  $("ev-details").hidden = !e.details;
+  $("ev-details").textContent = e.details || "";
   showEventError("");
   $("ev-sources").replaceChildren();
   $("ev-history").replaceChildren();
   if (!dlg.open) dlg.showModal();
   try {
-    const full = await api("events/" + id);
+    const full = await api("events/" + e.id);
     if (!dlg.open) return;
     renderEventDetail(full);
   } catch (err) {
@@ -496,26 +549,59 @@ function renderEventDetail(full) {
   hist.append(ul);
 }
 
-function go(delta) {
-  const d = monthStart(cal.year, cal.month + delta);
-  cal.year = d.getUTCFullYear();
-  cal.month = d.getUTCMonth();
-  cal.seen = "";
-  renderCalendar();
-  refreshCalendar();
+/* ---------- School calendar ---------- */
+const school = createCalendar($("school-calendar"), {
+  pill: $("school-pill"),
+  emptyText: (month) => "Nothing on the calendar for " + month + ".",
+  async load(from, to) {
+    const [c, h] = await Promise.all([api(`calendar?from=${from}&to=${to}&include_cancelled=true`), api("health")]);
+    return { c, h };
+  },
+});
+
+/* ---------- Volunteering ----------
+   One calendar per volunteering group. The picker above it switches between them
+   and is hidden while there is only one. */
+const vol = { names: [], selected: null, shown: "" };
+
+function renderVolunteeringPicker() {
+  const key = JSON.stringify([vol.names, vol.selected]);
+  if (key === vol.shown) return;
+  vol.shown = key;
+  const picker = $("vol-picker");
+  picker.hidden = vol.names.length < 2;
+  picker.replaceChildren(...vol.names.map((name) => {
+    const b = el("button", null, name);
+    b.setAttribute("aria-pressed", name === vol.selected);
+    b.onclick = () => {
+      if (name === vol.selected) return;
+      vol.selected = name;
+      renderVolunteeringPicker();
+      volunteering.reset();
+      volunteering.refresh();
+    };
+    return b;
+  }));
+  $("vol-sub").textContent = vol.names.length === 1
+    ? "Volunteer schedule and activities from the \u201c" + vol.names[0] + "\u201d parent group. It changes as the plans do."
+    : "Volunteer schedules and activities, from the parent groups that organize them. Each group has its own calendar.";
 }
-$("cal-prev").onclick = () => go(-1);
-$("cal-next").onclick = () => go(1);
-$("cal-today").onclick = () => {
-  const t = parse(cal.today);
-  go((t.getUTCFullYear() - cal.year) * 12 + t.getUTCMonth() - cal.month);
-};
-$("cal-cancelled").onchange = (e) => { cal.showCancelled = e.target.checked; renderCalendar(); };
-$("view-month").onclick = () => { cal.view = "month"; renderCalendar(); };
-$("view-list").onclick = () => { cal.view = "list"; renderCalendar(); };
+
+const volunteering = createCalendar($("vol-calendar"), {
+  pill: $("vol-pill"),
+  emptyText: (month) => "Nothing on the " + vol.selected + " calendar for " + month + ".",
+  async load(from, to) {
+    vol.names = (await api("volunteering")).calendars;
+    if (!vol.names.includes(vol.selected)) vol.selected = vol.names[0] || null;
+    renderVolunteeringPicker();
+    const h = await api("health");
+    if (!vol.selected) return { c: { today: null, events: [] }, h };
+    const group = encodeURIComponent(vol.selected);
+    return { c: await api(`calendar?group=${group}&from=${from}&to=${to}&include_cancelled=true`), h };
+  },
+});
 
 selectTab(location.hash.slice(1));
-renderCalendar();
 </script>
 </body>
 </html>
