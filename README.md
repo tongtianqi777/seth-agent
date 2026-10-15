@@ -243,6 +243,7 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_LOCAL_MODEL` | `qwen3:30b-a3b` | The model name as the local server knows it (provider `local`) |
 | `SETH_LOCAL_API_KEY` | (none) | Only if your local server requires a key |
 | `SETH_LOCAL_TIMEOUT` | `600` | Seconds to wait for the local model to answer one batch |
+| `SETH_LOCAL_MAX_TOKENS` | `16000` | The most the local model may write for one batch, thinking included. A model that reasons at length can hit this before it answers, which fails the batch ("hit max_tokens before finishing"). Raise it if you see that |
 | `SETH_BATCH_SIZE` | `20` | Messages per request to the model. Lower it (say `8`) for a local model |
 | `SETH_VOLUNTEERING_GROUPS` | `Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am.` | WhatsApp groups to treat as volunteering groups, as `Name=usual routine` entries separated by `;`. The routine is optional. Setting it replaces the default (so include Preschool P.E. Teachers and its routine if you still want them); set it empty for none |
 | `SETH_API_HOST` / `SETH_API_PORT` | `127.0.0.1` / `8765` | Where the HTTP API listens |

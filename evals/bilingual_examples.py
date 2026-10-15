@@ -114,7 +114,7 @@ CHINESE_VOLUNTEERING: tuple[list[list[Row]], list[Check]] = (
             "Tom" in e["title"] + (e["details"] or "") for e in on(s[0], "2026-10-23"))),
         ("sign-ups written in Chinese", lambda s: any(has_cjk(e["title"]) or has_cjk(e["details"]) for e in active(s[0]))),
         ("drop-out updates the event, no duplicate", lambda s: len(active(s[-1])) == 2 and len(on(s[-1], "2026-10-16")) == 1),
-        ("all on the P.E. calendar", lambda s: all(e["calendar"] == PE_GROUP for e in active(s[-1]))),
+        ("all on the P.E. calendar", lambda s: bool(active(s[-1])) and all(e["calendar"] == PE_GROUP for e in active(s[-1]))),
     ],
 )
 

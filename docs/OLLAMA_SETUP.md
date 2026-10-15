@@ -177,6 +177,8 @@ macOS lets the GPU use only part of unified memory by default (roughly two third
 
 **The first request after a quiet period is slow.** The model was unloaded. Set `OLLAMA_KEEP_ALIVE` ([step 5](#5-keep-the-model-loaded)).
 
+**The agent logs "hit max_tokens before finishing".** The model used its whole output allowance, usually because a reasoning model (Qwen3 and similar) spent it thinking before it wrote the answer, and that batch was marked failed. Raise `SETH_LOCAL_MAX_TOKENS` (default 16000), lower `SETH_BATCH_SIZE`, or use a model or mode that reasons less. [LOCAL_MODEL_CHOICE.md](LOCAL_MODEL_CHOICE.md) has more on thinking models.
+
 **Everything is very slow.** Run `ollama ps`. If `PROCESSOR` isn't `100% GPU`, the model doesn't fit: lower `num_ctx`, turn on flash attention, or pick a smaller model. Also check that nothing else large is using the memory.
 
 **The agent logs "the local model's output didn't match the schema".** The model produced malformed or off-schema JSON, and that batch was marked failed (see `extraction_errors` in the [memory docs](MEMORY.md)). It happens more with smaller models and larger batches. Lower `SETH_BATCH_SIZE`, and if it persists, use a bigger model.

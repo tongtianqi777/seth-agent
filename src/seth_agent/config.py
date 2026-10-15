@@ -34,6 +34,7 @@ class Config:
     local_model: str
     local_api_key: str | None
     local_timeout: float
+    local_max_tokens: int
     batch_size: int
     api_host: str
     api_port: int
@@ -60,6 +61,7 @@ class Config:
             local_model=env("SETH_LOCAL_MODEL", "qwen3:30b-a3b"),
             local_api_key=env("SETH_LOCAL_API_KEY") or None,
             local_timeout=float(env("SETH_LOCAL_TIMEOUT", "600")),
+            local_max_tokens=int(env("SETH_LOCAL_MAX_TOKENS", "16000")),
             batch_size=int(env("SETH_BATCH_SIZE", "20")),
             api_host=env("SETH_API_HOST", "127.0.0.1"),
             api_port=int(env("SETH_API_PORT", "8765")),
