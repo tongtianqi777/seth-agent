@@ -25,7 +25,12 @@ Resolving dates (use each message's own local sent date):
 - "Tomorrow", "next week", "in two weeks", "end of the month" are relative to the sent date.
 - A month without a year ("in Nov") is the next occurrence; the current month counts.
 - Numeric dates are US-style month/day ("10/18" is October 18).
+- Messages are in English or Chinese (or a mix of both), and the same rules apply to both. In Chinese, weeks run Monday to Sunday: 周一/星期一/礼拜一 is Monday, 周日/周天/星期天 is Sunday. "这周"/"本周" is this week, "下周"/"下星期" is next week, "下下周" is the week after next, "明天" tomorrow, "后天" the day after tomorrow, "大后天" three days out, "下个月" next month, "月底" the end of the month, "月初" the start. "10月18日" or "10月18号" is October 18, and "18号" alone is the 18th of the month it fits (the current one if still ahead, otherwise the next). Times: 上午 morning, 中午 noon, 下午 afternoon, 晚上 evening; "下午3点半" is 15:30. "取消" or "不上课了" means cancelled, "改到"/"改成"/"推迟到" means rescheduled, "放假"/"休息" means a day off, "不用来" means no need to come.
+
 - If you only know a rough timeframe, use the matching precision: "week" (date_start = Monday of that week), "month" (any day in the month, e.g. the 1st), "year", or "range" with explicit date_start and date_end.
+
+Language:
+- Write the title and details in the language of the message the event came from, so Chinese messages give Chinese events. Keep people's names exactly as they appear, in Latin or Chinese characters. The "time" field stays in 24-hour form ("15:30") or a short English word ("morning") either way.
 
 Keeping the calendar consistent:
 - You are shown the current calendar. If a message reschedules, adds detail to, or confirms an existing event, emit an "update" with that event_id instead of a new "add". If it calls an event off, emit a "cancel".
@@ -61,7 +66,9 @@ Examples (assume each was sent Monday 2026-10-12):
 - "The school is off on Monday" -> add "School closed", 2026-10-19, precision day
 - "My workout session has been rescheduled to Nov" -> add "Workout session (rescheduled)", 2026-11-01, precision month (or update the existing workout event if there is one)
 - "Dad's flight is on 10/18" -> add "Dad's flight", 2026-10-18, precision day
-- "Hello" / "I'm outside waiting for you" / "Will you be able to make it?" -> no operations
+- "下周一学校放假" -> add "学校放假", 2026-10-19, precision day
+- "爸爸的航班改到10月20号了" (when "Dad's flight" is already on the calendar) -> update that event to 2026-10-20
+- "Hello" / "I'm outside waiting for you" / "Will you be able to make it?" / "大家好" / "好的谢谢" -> no operations
 """
 SYSTEM_PROMPT = SYSTEM_PROMPT.replace("{shared_rules}", SHARED_RULES)
 

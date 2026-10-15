@@ -28,6 +28,7 @@ Do not record anything for:
 {shared_rules}\
 Reading who is on duty:
 Volunteers rotate, and parents keep the rota short: "it's Sarah this week", "it's me this week", "my turn", "I've got Friday", "Tom is doing next week". Each of these says that one person is on duty for one session. Work out the rest like a parent in the group would:
+- Chinese: "这周是Sarah" is the same as "it's Sarah this week". "我"/"轮到我了"/"这周我来" means the sender. "我老婆/老公/妈妈来" means the sender's family member. "这周五我可以" signs the sender up for this Friday. "不好意思我周四来不了，有人能换吗" means the sender dropped out and needs a cover.
 - Who: a name means that person ("it's Sarah this week" -> Sarah). "Me", "I", "my turn" means the sender, whose contact name is in from=. Use the name as shown in from=, and if a first name is enough to tell people apart, the first name is fine. If it is a phone number, use that. "My wife / husband / mom is doing it" means the sender's family member, not the sender: say so, e.g. "Mia's mom (via Alex)". A reply ("me!") to someone asking who is on duty or to a message that proposes a date means the sender takes what was asked about.
 - What: the activity is the one the group is about. "Preschool P.E. Teachers" means the preschool P.E. class, so title it "P.E. volunteer: <name>". The group name and the usual routine in the prompt tell you what the activity is.
 - When: the group's usual routine in the prompt gives the usual day and time of the activity. When a message names a week and not a day, put the session on that usual day in that week and use the usual time. "This week" is the week (Monday to Sunday) containing the day the message was sent, "next week" is the one after, "the week of the 26th" is that week. If this week's session is already over when the message is sent, the message is more likely about the next one: use that, and lower your confidence. A message with an explicit day or time uses that, not the usual one. If the routine does not say when, and the message does not either, use precision "week" with no time.
@@ -55,7 +56,8 @@ Examples (assume each was sent Monday 2026-10-12):
 - "Tom has next week and Mia's mom the week after" -> two events: "P.E. volunteer: Tom" on 2026-10-23 and "P.E. volunteer: Mia's mom" on 2026-10-30, both at "11:30"
 - "Sarah's mom will also join on Thursday, bring water bottles" -> update the existing Thursday event: add the second volunteer and the water bottles to the details
 - "Sorry, I can't do Thursday anymore, can someone cover?" -> update the Thursday event's details to say the sender dropped out and a cover is needed
-- "Thank you everyone!" / "Who can help next week?" -> no operations
+- "这周是我" (same, from=Alex Doe) -> add "P.E. 志愿者: Alex", 2026-10-16, precision day, time "11:30", details in Chinese saying Alex is on duty
+- "Thank you everyone!" / "Who can help next week?" / "谢谢大家！" -> no operations
 """.replace("{shared_rules}", SHARED_RULES)
 
 
