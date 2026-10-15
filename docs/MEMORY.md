@@ -9,7 +9,7 @@ The source of truth is [src/seth_agent/memory/schema.sql](../src/seth_agent/memo
 | Store | Location | Owner | Contents |
 |---|---|---|---|
 | Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the calendar, plus the agent's own bookkeeping |
-| Message database | `seth-ingestion/data/messages.db` (`SETH_SOURCE_DB`) | seth-ingestion | the raw WhatsApp messages. seth-agent **only reads** it. See seth-ingestion's [DATABASE.md](../../seth-ingestion/docs/DATABASE.md) |
+| Message feed | `seth-feed` API (`SETH_FEED_URL`) | seth-ingestion | the raw WhatsApp messages. seth-agent **only reads** them. See seth-ingestion's [CONSUMING.md](../../seth-ingestion/docs/CONSUMING.md) |
 
 The memory database is SQLite in WAL mode. The agent creates it on first run and brings the schema up to date on every start. You can read it with `sqlite3` while the agent is running.
 
@@ -66,7 +66,7 @@ erDiagram
 
 - **Dates** are `YYYY-MM-DD` strings in the agent's local timezone (`SETH_TZ`). They sort correctly as text.
 - **Timestamps** are RFC3339 strings in UTC, such as `2026-10-12T17:02:31Z`, the same as in seth-ingestion.
-- **Messages are identified** by `(chat_jid, message_id)`, the primary key of seth-ingestion's `messages` table. The memory database has no foreign keys into `messages.db`, because they're separate files.
+- **Messages are identified** by `(chat_jid, message_id)`, the key seth-feed gives every message. `chat_jid` is the WhatsApp group's JID. The memory database has no foreign keys into seth-ingestion, because it's a separate system.
 - **Nothing is deleted.** A cancelled event stays, with `status = 'cancelled'`, so the history is always complete.
 
 ## Calendar tables
@@ -151,7 +151,7 @@ The messages each extractor has handled. This table is how the agent avoids read
 | `outcome` | TEXT | no | `skipped` (filtered out without calling Claude), `extracted` (Claude read it) or `failed` (given up on) |
 | `processed_at` | TEXT | no | When this happened |
 
-A message is handled again only when its current body hash differs from the stored one. In practice this happens when seth-ingestion fills in an album's caption after the album was first stored.
+A message is handled again only when its current body hash differs from the stored one. In practice this happens when seth-feed sends an album again because its caption or photos arrived later.
 
 Rows are per extractor, so a newly added extractor sees every message as new and works through the whole history, without affecting the others.
 
@@ -161,7 +161,7 @@ Key/value pairs.
 
 | Key | Value |
 |---|---|
-| `source.high_water` | The newest `ingested_at` the agent has fully handled. The next poll reads from 10 minutes before this |
+| `source.cursor` | seth-feed's cursor for the newest message the agent has fully handled. The next poll asks for everything after it |
 | `agent.last_poll_at` | When the last poll finished |
 | `agent.last_transient_error` | `<timestamp> <extractor>: <message>` for the last problem that will be retried |
 
@@ -215,15 +215,10 @@ SELECT op, reason, at,
 FROM event_history WHERE event_id = 3 ORDER BY id;
 ```
 
-Each event with the text of the messages behind it (attach seth-ingestion's database first):
+The text of the messages behind an event isn't stored here. Read it live from the agent's API, which looks each source message up in seth-feed:
 
-```sql
-ATTACH '/Users/tnpbot/github.com/seth-ingestion/data/messages.db' AS src;
-SELECT e.id, e.title, s.role, m.sent_at, m.body
-FROM events e
-JOIN event_sources s ON s.event_id = e.id
-JOIN src.messages m USING (chat_jid, message_id)
-ORDER BY e.id, m.sent_at;
+```bash
+curl -s http://127.0.0.1:8765/events/3
 ```
 
 What happened to each message:
@@ -243,10 +238,10 @@ SELECT at, error, message_ids FROM extraction_errors ORDER BY id DESC LIMIT 10;
 | To… | Do this (with the agent stopped) |
 |---|---|
 | Rebuild everything from scratch | Delete `data/memory.db` (and `-wal`/`-shm` if present) |
-| Re-read every message for the calendar, keeping nothing | `DELETE FROM event_history; DELETE FROM event_sources; DELETE FROM events; DELETE FROM processed_messages WHERE extractor = 'calendar'; DELETE FROM agent_state WHERE key = 'source.high_water';` (the `sqlite3` shell doesn't enforce foreign keys, so the child tables have to be cleared explicitly) |
-| Retry batches that failed | `DELETE FROM processed_messages WHERE outcome = 'failed'; DELETE FROM agent_state WHERE key = 'source.high_water';` |
+| Re-read every message for the calendar, keeping nothing | `DELETE FROM event_history; DELETE FROM event_sources; DELETE FROM events; DELETE FROM processed_messages WHERE extractor = 'calendar'; DELETE FROM agent_state WHERE key = 'source.cursor';` (the `sqlite3` shell doesn't enforce foreign keys, so the child tables have to be cleared explicitly) |
+| Retry batches that failed | `DELETE FROM processed_messages WHERE outcome = 'failed'; DELETE FROM agent_state WHERE key = 'source.cursor';` |
 
-Clearing `source.high_water` makes the next poll look at the whole message history again. Only messages without a matching `processed_messages` row are sent to Claude, so the extra cost is a local read.
+Clearing `source.cursor` makes the next poll read the whole message history from seth-feed again. Only messages without a matching `processed_messages` row are sent to Claude, so the extra cost is a local read.
 
 ## Changing the schema
 

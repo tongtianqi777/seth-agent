@@ -1,50 +1,43 @@
-"""Read-only access to seth-ingestion's messages.db.
+"""Read-only access to the school's WhatsApp messages through seth-feed, seth-ingestion's HTTP API.
 
-See /Users/tnpbot/github.com/seth-ingestion/docs/DATABASE.md for the schema. This module never writes to it.
+See /Users/tnpbot/github.com/seth-ingestion/docs/CONSUMING.md for the API. This module only issues GET requests.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-import sqlite3
-from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
+from typing import Any
+from urllib.parse import quote
+
+import httpx
 
 log = logging.getLogger(__name__)
 
-# Album captions can be filled in after a row was first written, without changing ingested_at.
-# Re-reading a short window behind the high-water mark picks those up.
-REREAD_WINDOW = timedelta(minutes=10)
+PAGE_SIZE = 500  # the most /messages/new returns per call
 
-_COLUMNS = """
-    m.chat_jid, m.message_id, m.sender, m.sent_at, m.ingested_at, m.message_type, m.body,
-    m.edit_target_id, m.quoted_id, m.media_file_count,
-    orig.body AS edit_target_body, q.body AS quoted_body
-"""
-_JOINS = """
-    LEFT JOIN messages orig ON m.message_type = 'edit'
-        AND orig.chat_jid = m.chat_jid AND orig.message_id = m.edit_target_id
-    LEFT JOIN messages q ON q.chat_jid = m.chat_jid AND q.message_id = m.quoted_id
-"""
+
+class SourceError(Exception):
+    """seth-feed is unreachable or answered with an error. Retrying later may work."""
 
 
 @dataclass(frozen=True)
 class Message:
-    chat_jid: str
+    chat_jid: str  # the group's JID
     message_id: str
     sender: str
     sent_at: datetime  # aware, UTC
-    ingested_at: str  # RFC3339 UTC string, as stored
+    ingested_at: str  # RFC3339 UTC string, as given
     message_type: str
-    body: str | None
+    body: str | None  # latest text (edits applied); for an `edit` row, the new text
     edit_target_id: str | None = None
     quoted_id: str | None = None
     media_file_count: int = 0
     edit_target_body: str | None = None
     quoted_body: str | None = None
+    group: str = ""  # the group's name
 
     @property
     def key(self) -> tuple[str, str]:
@@ -55,6 +48,13 @@ class Message:
         return hashlib.sha256((self.body or "").encode()).hexdigest()[:16]
 
 
+@dataclass(frozen=True)
+class Page:
+    messages: list[Message]
+    cursor: str
+    has_more: bool
+
+
 def parse_ts(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
@@ -63,67 +63,104 @@ def format_ts(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _row_to_message(row: sqlite3.Row) -> Message:
-    return Message(
-        chat_jid=row["chat_jid"],
-        message_id=row["message_id"],
-        sender=row["sender"],
-        sent_at=parse_ts(row["sent_at"]),
-        ingested_at=row["ingested_at"],
-        message_type=row["message_type"],
-        body=row["body"],
-        edit_target_id=row["edit_target_id"],
-        quoted_id=row["quoted_id"],
-        media_file_count=row["media_file_count"],
-        edit_target_body=row["edit_target_body"],
-        quoted_body=row["quoted_body"],
-    )
+def _text(raw: dict[str, Any]) -> str | None:
+    """The text people see: the latest edit for ordinary messages, the new text for an edit row."""
+    if raw["message_type"] == "edit":
+        return raw.get("body")
+    return raw.get("current_body", raw.get("body"))
 
 
 class MessageSource:
-    def __init__(self, path: Path):
-        self.path = Path(path)
+    def __init__(self, base_url: str, client: httpx.Client | None = None, page_size: int = PAGE_SIZE):
+        self.base_url = base_url.rstrip("/")
+        self.page_size = page_size
+        self.client = client or httpx.Client(base_url=self.base_url, timeout=30)
 
-    def _connect(self) -> sqlite3.Connection:
+    def _get(self, path: str, params: dict[str, Any] | None = None, allow_404: bool = False) -> dict[str, Any] | None:
         try:
-            conn = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
-            conn.execute("SELECT 1 FROM messages LIMIT 1")
-        except sqlite3.OperationalError as e:
-            if "unable to open" not in str(e):
-                raise
-            # A WAL database can't be opened read-only when its -shm file doesn't exist,
-            # which is the case while seth-ingestion is stopped. immutable=1 skips WAL handling.
-            # That is only safe because nothing is writing the file at that moment.
-            log.warning("messages.db not openable read-only (%s); falling back to immutable mode", e)
-            conn = sqlite3.connect(f"file:{self.path}?immutable=1", uri=True)
-        conn.row_factory = sqlite3.Row
-        return conn
+            resp = self.client.get(path, params=params)
+        except httpx.HTTPError as e:
+            raise SourceError(f"seth-feed unreachable at {self.base_url}: {e}") from e
+        if resp.status_code == 404 and allow_404:
+            return None
+        if resp.status_code != 200:
+            raise SourceError(f"seth-feed {path} returned {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
 
-    def fetch_candidates(self, high_water: str | None) -> list[Message]:
-        """Messages ingested at or after high_water minus the re-read window, oldest first."""
-        sql = f"SELECT {_COLUMNS} FROM messages m {_JOINS}"
-        params: list[str] = []
-        if high_water:
-            sql += " WHERE m.ingested_at >= ?"
-            params.append(format_ts(parse_ts(high_water) - REREAD_WINDOW))
-        sql += " ORDER BY m.sent_at, m.message_id"
-        with closing(self._connect()) as conn:
-            return [_row_to_message(r) for r in conn.execute(sql, params)]
+    # -- reading ------------------------------------------------------------------
+
+    def current_cursor(self) -> str:
+        """The cursor for "everything so far"."""
+        return self._get("/health")["cursor"]  # type: ignore[index]
+
+    def fetch_new(self, cursor: str | None) -> Page:
+        """Up to one page of messages recorded after `cursor` (None = from the start), oldest first.
+
+        Edits arrive as their own `edit` rows, and an album that gained photos comes again, so a
+        message can appear more than once over time.
+        """
+        params: dict[str, Any] = {"limit": self.page_size}
+        if cursor:
+            params["since"] = cursor
+        data = self._get("/messages/new", params)
+        assert data is not None
+        # Arrival order isn't sending order (history can arrive after newer live messages); sort is stable.
+        messages = sorted(self._to_messages(data["messages"]), key=lambda m: m.sent_at)
+        return Page(messages, data["cursor"], data["has_more"])
 
     def fetch_context(self, chat_jid: str, before: datetime, limit: int = 15) -> list[Message]:
-        """The `limit` messages in a chat sent just before `before`, oldest first."""
-        sql = f"""SELECT {_COLUMNS} FROM messages m {_JOINS}
-                  WHERE m.chat_jid = ? AND m.sent_at < ?
-                  ORDER BY m.sent_at DESC LIMIT ?"""
-        with closing(self._connect()) as conn:
-            rows = conn.execute(sql, (chat_jid, format_ts(before), limit)).fetchall()
-        return [_row_to_message(r) for r in reversed(rows)]
+        """The `limit` messages in a group sent just before `before`, oldest first."""
+        params = {"group": chat_jid, "to": format_ts(before), "sort": "sent_at", "order": "desc", "limit": limit}
+        data = self._get("/messages", params)
+        assert data is not None
+        return self._to_messages(list(reversed(data["messages"])))
 
     def get_messages(self, keys: list[tuple[str, str]]) -> list[Message]:
-        if not keys:
-            return []
-        where = " OR ".join("(m.chat_jid = ? AND m.message_id = ?)" for _ in keys)
-        params = [v for k in keys for v in k]
-        with closing(self._connect()) as conn:
-            rows = conn.execute(f"SELECT {_COLUMNS} FROM messages m {_JOINS} WHERE {where}", params)
-            return [_row_to_message(r) for r in rows]
+        """The messages with these (chat_jid, message_id) keys. Ones that don't exist are left out."""
+        raws = [r for r in (self._get_raw(k) for k in dict.fromkeys(keys)) if r]
+        return self._to_messages(raws)
+
+    def _get_raw(self, key: tuple[str, str]) -> dict[str, Any] | None:
+        chat_jid, message_id = key
+        return self._get(f"/messages/{quote(chat_jid, safe='')}/{quote(message_id, safe='')}", allow_404=True)
+
+    # -- conversion -------------------------------------------------------------------
+
+    def _to_messages(self, raws: list[dict[str, Any]]) -> list[Message]:
+        """Builds Messages, filling in the text an edit changed and the text a reply quotes."""
+        known = {(r["chat_jid"], r["message_id"]): r for r in raws}
+        fetched: dict[tuple[str, str], dict[str, Any] | None] = {}
+
+        def lookup(chat_jid: str, message_id: str | None) -> dict[str, Any] | None:
+            if not message_id:
+                return None
+            key = (chat_jid, message_id)
+            if key in known:
+                return known[key]
+            if key not in fetched:
+                fetched[key] = self._get_raw(key)
+            return fetched[key]
+
+        out = []
+        for r in raws:
+            original = lookup(r["chat_jid"], r.get("edit_target_id")) if r["message_type"] == "edit" else None
+            quoted = lookup(r["chat_jid"], r.get("quoted_id"))
+            out.append(
+                Message(
+                    chat_jid=r["chat_jid"],
+                    message_id=r["message_id"],
+                    sender=r.get("sender") or r.get("sender_name") or "",
+                    sent_at=parse_ts(r["sent_at"]),
+                    ingested_at=r["ingested_at"],
+                    message_type=r["message_type"],
+                    body=_text(r),
+                    edit_target_id=r.get("edit_target_id"),
+                    quoted_id=r.get("quoted_id"),
+                    media_file_count=r.get("media_file_count", 0),
+                    # The original as first sent: its current_body already includes this very edit.
+                    edit_target_body=original.get("body") if original else None,
+                    quoted_body=_text(quoted) if quoted else None,
+                    group=r.get("group") or "",
+                )
+            )
+        return out

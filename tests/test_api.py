@@ -4,8 +4,8 @@ from conftest import CHAT, TZ
 from seth_agent.api import create_app
 
 
-def test_calendar_and_event_endpoints(source_db, source, store):
-    source_db.add("A", "Dad's flight is on 10/18")
+def test_calendar_and_event_endpoints(feed, source, store):
+    feed.add("A", "Dad's flight is on 10/18")
     with store.transaction() as conn:
         store.add_event(conn, {"title": "Dad's flight", "date_start": "2026-10-18", "precision": "day"}, [(CHAT, "A")])
         store.add_event(conn, {"title": "Workout", "date_start": "2026-11-01", "precision": "month"}, [(CHAT, "A")])

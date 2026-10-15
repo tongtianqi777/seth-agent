@@ -5,10 +5,8 @@ Costs a few API calls. Run with:  ANTHROPIC_API_KEY=... .venv/bin/python evals/c
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 import tempfile
-from contextlib import closing
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -17,8 +15,9 @@ from seth_agent.extractors.calendar import CalendarExtractor
 from seth_agent.memory.store import MemoryStore
 from seth_agent.source import MessageSource
 
-SCHEMA = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "ingestion_schema.sql"
-CHAT = "15555550123@s.whatsapp.net"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+from fakefeed import FakeFeed  # noqa: E402  (the in-memory seth-feed used by the tests)
+
 TZ = ZoneInfo("America/Los_Angeles")
 
 # Sent Monday 2026-10-12, mid-morning Pacific time.
@@ -33,28 +32,20 @@ ROUND_1 = [
 ROUND_2 = [("M7", "Oh wait, dad's flight got moved to 10/20")]
 
 
-def add(db: Path, rows, start_minute: int) -> None:
-    with closing(sqlite3.connect(db)) as conn, conn:
-        for i, (mid, body) in enumerate(rows):
-            ts = f"2026-10-12T17:{start_minute + i:02d}:00Z"
-            conn.execute(
-                """INSERT INTO messages (chat_jid, message_id, sender, sender_jid, sent_at, ingested_at, message_type, body, source)
-                   VALUES (?, ?, 'Alex Doe', ?, ?, ?, 'text', ?, 'live')""",
-                (CHAT, mid, CHAT, ts, ts, body),
-            )
+def add(feed: FakeFeed, rows, start_minute: int) -> None:
+    for i, (mid, body) in enumerate(rows):
+        feed.add(mid, body, sent_at=f"2026-10-12T17:{start_minute + i:02d}:00Z", sender="Alex Doe")
 
 
 def main() -> int:
     tmp = Path(tempfile.mkdtemp())
-    db = tmp / "messages.db"
-    with closing(sqlite3.connect(db)) as conn:
-        conn.executescript(SCHEMA.read_text())
-    store, source = MemoryStore(tmp / "memory.db"), MessageSource(db)
+    feed = FakeFeed()
+    store, source = MemoryStore(tmp / "memory.db"), MessageSource("http://feed", client=feed.client)
     agent = Agent(store, source, [CalendarExtractor(store, source, TZ)])
 
-    add(db, ROUND_1, 0)
+    add(feed, ROUND_1, 0)
     agent.poll_once()
-    add(db, ROUND_2, 30)
+    add(feed, ROUND_2, 30)
     agent.poll_once()
 
     events = store.list_events(include_cancelled=True)

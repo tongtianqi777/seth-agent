@@ -10,11 +10,11 @@ from dataclasses import dataclass, field
 from .config import Config
 from .extractors.base import Extractor, PermanentError, TransientError
 from .memory.store import MemoryStore, now_ts
-from .source import Message, MessageSource
+from .source import Message, MessageSource, SourceError
 
 log = logging.getLogger(__name__)
 
-HIGH_WATER_KEY = "source.high_water"
+CURSOR_KEY = "source.cursor"
 MAX_BACKOFF_SECONDS = 600
 
 
@@ -37,21 +37,28 @@ class Agent:
 
     def poll_once(self) -> PollResult:
         result = PollResult()
-        high_water = self.store.get_state(HIGH_WATER_KEY)
-        messages = self.source.fetch_candidates(high_water)
-        result.seen = len(messages)
-
-        for ext in self.extractors:
-            try:
-                self._run_extractor(ext, messages, result)
-            except TransientError as e:
-                result.transient_error = f"{ext.name}: {e}"
-                log.warning("transient error in %s, will retry: %s", ext.name, e)
-
-        # Only move the high-water mark once every candidate has been handled, so a batch that
-        # hit a transient error is still inside the read window next time.
-        if messages and result.transient_error is None:
-            self.store.set_state(HIGH_WATER_KEY, max(m.ingested_at for m in messages))
+        cursor = self.store.get_state(CURSOR_KEY)
+        try:
+            while True:
+                page = self.source.fetch_new(cursor)
+                result.seen += len(page.messages)
+                for ext in self.extractors:
+                    try:
+                        self._run_extractor(ext, page.messages, result)
+                    except TransientError as e:
+                        result.transient_error = f"{ext.name}: {e}"
+                        log.warning("transient error in %s, will retry: %s", ext.name, e)
+                # Only move the cursor once every message in the page has been handled, so a page that
+                # hit a transient error is fetched again next time.
+                if result.transient_error:
+                    break
+                cursor = page.cursor
+                self.store.set_state(CURSOR_KEY, cursor)
+                if not page.has_more:
+                    break
+        except SourceError as e:
+            result.transient_error = f"source: {e}"
+            log.warning("seth-feed unavailable, will retry: %s", e)
         self.store.set_state("agent.last_poll_at", now_ts())
         if result.transient_error:
             self.store.set_state("agent.last_transient_error", f"{now_ts()} {result.transient_error}")
@@ -112,7 +119,7 @@ def build_agent(config: Config) -> Agent:
     from .extractors.calendar import CalendarExtractor
 
     store = MemoryStore(config.memory_db)
-    source = MessageSource(config.source_db)
+    source = MessageSource(config.feed_url)
     extractors: list[Extractor] = [
         CalendarExtractor(
             store, source, config.tz, model=config.model, effort=config.effort, batch_size=config.batch_size

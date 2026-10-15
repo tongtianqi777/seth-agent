@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from conftest import TZ
-from seth_agent.agent import HIGH_WATER_KEY, Agent
+from seth_agent.agent import CURSOR_KEY, Agent
 from seth_agent.extractors.base import TransientError
 from seth_agent.extractors.calendar import CalendarExtractor, CalendarOps, EventOp
 from seth_agent.source import Message
@@ -37,21 +37,22 @@ def make_agent(store, source, respond=no_ops):
     return Agent(store, source, [ext]), ext
 
 
-def test_filters_media_only_and_emoji(source_db, source, store):
-    source_db.add("IMG", None, message_type="image", media_file_count=1, sent_at="2026-10-12T10:00:00Z")
-    source_db.add("EMO", "👍🎉", sent_at="2026-10-12T10:01:00Z")
-    source_db.add("OTH", None, message_type="other", sent_at="2026-10-12T10:02:00Z")
-    source_db.add("TXT", "Dad's flight is on 10/18", sent_at="2026-10-12T10:03:00Z")
-    source_db.add("CAP", "Party next Sat!", message_type="image", media_file_count=1, sent_at="2026-10-12T10:04:00Z")
+def test_filters_media_only_and_emoji(feed, source, store):
+    feed.add("IMG", None, message_type="image", media_file_count=1, sent_at="2026-10-12T10:00:00Z")
+    feed.add("EMO", "👍🎉", sent_at="2026-10-12T10:01:00Z")
+    feed.add("OTH", None, message_type="other", sent_at="2026-10-12T10:02:00Z")
+    feed.add("TXT", "Dad's flight is on 10/18", sent_at="2026-10-12T10:03:00Z")
+    feed.add("OTX", "Picnic is Saturday", message_type="other", sent_at="2026-10-12T10:05:00Z")
+    feed.add("CAP", "Party next Sat!", message_type="image", media_file_count=1, sent_at="2026-10-12T10:04:00Z")
     agent, ext = make_agent(store, source)
 
     r = agent.poll_once()
-    assert ext.batches == [["TXT", "CAP"]]
-    assert (r.seen, r.skipped, r.extracted) == (5, 3, 2)
+    assert ext.batches == [["TXT", "CAP", "OTX"]]
+    assert (r.seen, r.skipped, r.extracted) == (6, 3, 3)
 
 
-def test_adds_events_and_is_idempotent(source_db, source, store):
-    source_db.add("TXT", "Dad's flight is on 10/18")
+def test_adds_events_and_is_idempotent(feed, source, store):
+    feed.add("TXT", "Dad's flight is on 10/18")
 
     def respond(batch):
         return CalendarOps(operations=[EventOp(
@@ -65,22 +66,62 @@ def test_adds_events_and_is_idempotent(source_db, source, store):
     [event] = store.list_events()
     assert event["title"] == "Dad's flight"
     assert event["sources"][0]["message_id"] == "TXT"
-    assert store.get_state(HIGH_WATER_KEY) == "2026-10-12T16:00:00Z"
+    assert store.get_state(CURSOR_KEY) == "1"
 
 
-def test_album_caption_arriving_later_is_reprocessed(source_db, source, store):
-    source_db.add("ALB", None, message_type="album", media_file_count=2)
+def test_reads_every_page_and_resumes_from_the_cursor(feed, source, store):
+    source.page_size = 2
+    for i in range(5):
+        feed.add(f"M{i}", f"Party on Oct {20 + i}", sent_at=f"2026-10-12T1{i}:00:00Z")
+    agent, ext = make_agent(store, source)
+
+    r = agent.poll_once()
+    assert r.seen == 5 and [len(b) for b in ext.batches] == [2, 2, 1]
+    assert store.get_state(CURSOR_KEY) == "5"
+
+    feed.requests.clear()
+    agent.poll_once()
+    assert feed.requests == ["/messages/new?limit=2&since=5"]
+
+
+def test_groups_are_batched_separately_and_named_in_prompt(feed, source, store):
+    feed.add("A1", "Picnic on Oct 24", sent_at="2026-10-12T10:00:00Z", chat_jid="g1@g.us", group="Preschool", sender="Melissa")
+    feed.add("B1", "Meeting on Oct 25", sent_at="2026-10-12T10:01:00Z", chat_jid="g2@g.us", group="Yearbook Committee")
+    feed.add("A2", "Bring a dish", sent_at="2026-10-12T10:02:00Z", chat_jid="g1@g.us", group="Preschool")
+    agent, ext = make_agent(store, source)
+    agent.poll_once()
+    assert ext.batches == [["A1", "A2"], ["B1"]]
+    assert 'WhatsApp group "Preschool"' in ext.prompts[0]
+    assert "from=Melissa" in ext.prompts[0]
+    assert 'WhatsApp group "Yearbook Committee"' in ext.prompts[1]
+
+
+def test_feed_down_is_transient_and_recovers(feed, source, store):
+    feed.add("A", "Dad's flight is on 10/18")
+    agent, ext = make_agent(store, source)
+    feed.down = True
+    r = agent.poll_once()
+    assert r.transient_error and "seth-feed" in r.transient_error
+    assert store.get_state("agent.last_poll_at") and store.get_state(CURSOR_KEY) is None
+
+    feed.down = False
+    agent.poll_once()
+    assert ext.batches == [["A"]]
+
+
+def test_album_caption_arriving_later_is_reprocessed(feed, source, store):
+    feed.add("ALB", None, message_type="album", media_file_count=2)
     agent, ext = make_agent(store, source)
     agent.poll_once()
     assert ext.batches == []
 
-    source_db.set_body("ALB", "Recital is on Nov 3")
+    feed.set_body("ALB", "Recital is on Nov 3")
     agent.poll_once()
     assert ext.batches == [["ALB"]]
 
 
-def test_update_uses_existing_calendar_in_prompt(source_db, source, store):
-    source_db.add("A", "Dad's flight is on 10/18", sent_at="2026-10-12T10:00:00Z")
+def test_update_uses_existing_calendar_in_prompt(feed, source, store):
+    feed.add("A", "Dad's flight is on 10/18", sent_at="2026-10-12T10:00:00Z")
 
     def respond(batch):
         if batch[0].message_id == "A":
@@ -91,7 +132,7 @@ def test_update_uses_existing_calendar_in_prompt(source_db, source, store):
 
     agent, ext = make_agent(store, source, respond)
     agent.poll_once()
-    source_db.add("E", "Dad's flight is on 10/20", sent_at="2026-10-12T10:05:00Z", message_type="edit", edit_target_id="A")
+    feed.add("E", "Dad's flight is on 10/20", sent_at="2026-10-12T10:05:00Z", message_type="edit", edit_target_id="A")
     agent.poll_once()
 
     assert "id=1 | 2026-10-18 (day) | Dad's flight" in ext.prompts[1]
@@ -101,8 +142,8 @@ def test_update_uses_existing_calendar_in_prompt(source_db, source, store):
     assert event["date_start"] == "2026-10-20"
 
 
-def test_invalid_operation_does_not_drop_batch(source_db, source, store):
-    source_db.add("A", "stuff")
+def test_invalid_operation_does_not_drop_batch(feed, source, store):
+    feed.add("A", "stuff")
 
     def respond(batch):
         return CalendarOps(operations=[
@@ -116,8 +157,8 @@ def test_invalid_operation_does_not_drop_batch(source_db, source, store):
     assert [e["title"] for e in store.list_events()] == ["Real"]
 
 
-def test_transient_error_retries_and_holds_high_water(source_db, source, store):
-    source_db.add("A", "Dad's flight is on 10/18")
+def test_transient_error_retries_and_holds_high_water(feed, source, store):
+    feed.add("A", "Dad's flight is on 10/18")
     calls = {"n": 0}
 
     def respond(batch):
@@ -129,15 +170,15 @@ def test_transient_error_retries_and_holds_high_water(source_db, source, store):
     agent, ext = make_agent(store, source, respond)
     r = agent.poll_once()
     assert r.transient_error
-    assert store.get_state(HIGH_WATER_KEY) is None
+    assert store.get_state(CURSOR_KEY) is None
     agent.poll_once()
     assert ext.batches == [["A"], ["A"]]
 
 
-def test_permanent_error_is_recorded_and_skipped(source_db, source, store):
+def test_permanent_error_is_recorded_and_skipped(feed, source, store):
     from seth_agent.extractors.base import PermanentError
 
-    source_db.add("A", "Dad's flight is on 10/18")
+    feed.add("A", "Dad's flight is on 10/18")
 
     def respond(batch):
         raise PermanentError("refusal")
