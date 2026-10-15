@@ -57,6 +57,7 @@ When plans change, the calendar changes with them. *"The field trip is moved to 
 - [How the calendar works](#how-the-calendar-works)
 - [Quick start](#quick-start)
 - [Everyday use](#everyday-use)
+- [The dashboard](#the-dashboard)
 - [Reading the calendar](#reading-the-calendar)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -140,7 +141,7 @@ Nov 2026    #2 Parent-teacher conferences (rescheduled)
 
 | Command | What it does |
 |---|---|
-| `seth-agent run` | Keeps watching for new messages and serves the calendar at `http://127.0.0.1:8765` |
+| `seth-agent run` | Keeps watching for new messages and serves the dashboard and the calendar API at `http://127.0.0.1:8765` |
 | `seth-agent once` | Catches up on any new messages, prints a summary and exits. Handy for a quick refresh or a scheduled job |
 | `seth-agent calendar` | Prints upcoming events, from today onward |
 | `seth-agent calendar --from 2026-11-01 --to 2026-11-30` | Prints events in a date range |
@@ -149,6 +150,12 @@ Nov 2026    #2 Parent-teacher conferences (rescheduled)
 Add `-v` before any command for detailed logs, e.g. `seth-agent -v once`.
 
 All commands live in `.venv/bin/`. To type just `seth-agent`, activate the environment first with `source .venv/bin/activate`.
+
+## The dashboard
+
+While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard has one tab for each kind of memory the agent maintains. Today that is the **School calendar**: a month view of every event, with a list view for small screens. Click an event to see the messages it came from and how it has changed. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
+
+It uses the same look as the [seth-ingestion](../seth-ingestion) dashboard. New memories get their own tab, see [Adding a new kind of memory](docs/DEVELOPMENT.md#adding-a-new-kind-of-memory).
 
 ## Reading the calendar
 

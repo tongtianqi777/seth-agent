@@ -10,6 +10,7 @@ This is the reference for apps and tools that read the school calendar from seth
 - **Format:** every response is JSON.
 - **Dates** are `YYYY-MM-DD` in the agent's local timezone.
 - **Timestamps** are RFC3339 in UTC, e.g. `2026-10-12T17:02:00Z`.
+- **Dashboard:** the same server shows a web dashboard at `/`. It only uses the endpoints below.
 - **Interactive docs:** open `/docs` (Swagger UI) to try the endpoints. The machine-readable schema is at `/openapi.json`.
 
 | Endpoint | Purpose |
@@ -85,6 +86,7 @@ Returns the events whose span **overlaps** a date range. A query for November 10
 
 | Field | Description |
 |---|---|
+| `today` | Today's date in the agent's timezone |
 | `from`, `to` | The range that was applied. `to` is `null` when there's no upper limit |
 | `days` | Events grouped by `label`, in date order. Each entry is a compact summary: `id`, `title`, `details`, `time`, `status`, `precision`, `date_start`, `date_end` |
 | `events` | The full [event objects](#the-event-object), ordered by `date_start` |
@@ -97,6 +99,7 @@ curl -s 'http://127.0.0.1:8765/calendar?from=2026-10-01&to=2026-11-30'
 
 ```json
 {
+  "today": "2026-10-14",
   "from": "2026-10-01",
   "to": "2026-11-30",
   "days": {

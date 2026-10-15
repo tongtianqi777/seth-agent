@@ -48,7 +48,8 @@ src/seth_agent/
 ├── config.py              Settings from SETH_* environment variables
 ├── source.py              MessageSource: read-only client for seth-ingestion's seth-feed HTTP API
 ├── agent.py               Agent: the poll loop, batching, transactions, high-water mark
-├── api.py                 FastAPI app: /calendar, /events/{id}, /health
+├── api.py                 FastAPI app: /calendar, /events/{id}, /health, and the dashboard at /
+├── dashboard/             The dashboard: one static index.html (no build step) and the Seth logos
 ├── extractors/
 │   ├── base.py            Extractor interface, TransientError, PermanentError
 │   └── calendar.py        CalendarExtractor: prompt, Claude call, applying operations
@@ -309,7 +310,9 @@ extractors = [
 
 **5. Expose it** by adding `GET /updates` in [api.py](../src/seth_agent/api.py) and documenting it in [API.md](API.md).
 
-**6. Test it:** add a scripted variant to `test_agent.py`, and a live eval in `evals/` once there are real example messages.
+**6. Give it a tab** on the dashboard in [dashboard/index.html](../src/seth_agent/dashboard/index.html): add a tab button (`tab-updates`), a panel (`panel-updates`), and an entry in the `tabs` list in the script with a `refresh` function that fetches from your new endpoint. The tab bar, the URL hash and keyboard navigation are already handled.
+
+**7. Test it:** add a scripted variant to `test_agent.py`, and a live eval in `evals/` once there are real example messages.
 
 What you get for free:
 
