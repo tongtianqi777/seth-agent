@@ -190,10 +190,18 @@ def test_permanent_error_is_recorded_and_skipped(feed, source, store):
     assert store.last_error()["error"] == "refusal"
 
 
-@pytest.mark.parametrize("body,expected", [("ok", True), ("🙂", False), ("", False), ("10/18", True)])
+@pytest.mark.parametrize("body,expected", [("ok", True), ("🙂", False), ("", False), ("10/18", True), ("下周一放假", True), ("好", True), ("！！👍", False)])
 def test_wants(store, source, body, expected):
     ext = ScriptedCalendar(store, source, no_ops)
     from datetime import datetime, timezone
 
     msg = Message("c", "m", "s", datetime.now(timezone.utc), "", "text", body)
     assert ext.wants(msg) is expected
+
+
+def test_chinese_messages_reach_claude_unescaped(feed, source, store):
+    feed.add("C1", "下周一学校放假", sent_at="2026-10-12T17:00:00Z")
+    ext = ScriptedCalendar(store, source, no_ops)
+    Agent(store, source, [ext]).poll_once()
+    assert "下周一学校放假" in ext.prompts[0] and "\\u" not in ext.prompts[0]
+    assert "下周" in ext.system_prompt
