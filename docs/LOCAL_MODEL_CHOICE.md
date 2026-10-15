@@ -79,6 +79,8 @@ Still worth adding as you go:
 - **Run each candidate three times.** Temperature is 0, but a local server's output can still vary slightly between runs. A model that passes sometimes isn't passing.
 - **Watch the time.** Models that reason before answering (the Qwen3 family does) can spend thousands of tokens per batch. The 9B above generated 4,000+ tokens per batch at about 22 tokens/s on a 32 GB M1 Pro, around three minutes each. The M5 Max will be much faster, but compare seconds per batch, not just pass rates.
 
+[compare_local_models.sh](../evals/compare_local_models.sh) does the setup and the three runs for you: `evals/compare_local_models.sh qwen3:30b-a3b qwen3:32b`. For each model it builds a copy with a long context window, runs the evals with the output limit raised, saves the output to `data/eval-results/<model>.txt` and prints pass counts. Set `SCENARIOS` to run only some of the bilingual scenarios.
+
 Record the results where you can compare them:
 
 | Model | Build / context | English | Chinese | Add vs. update | Injection | Seconds per batch | Memory (`ollama ps`) |
