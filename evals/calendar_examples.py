@@ -1,6 +1,7 @@
 """Live check of the calendar extractor against Claude, using the examples from the spec.
 
 Costs a few API calls. Run with:  ANTHROPIC_API_KEY=... .venv/bin/python evals/calendar_examples.py
+To try a local model instead:  SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/calendar_examples.py
 """
 
 from __future__ import annotations
@@ -11,7 +12,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from seth_agent.agent import Agent
+from seth_agent.config import Config
 from seth_agent.extractors.calendar import CalendarExtractor
+from seth_agent.llm import build_llm
 from seth_agent.memory.store import MemoryStore
 from seth_agent.source import MessageSource
 
@@ -41,7 +44,7 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp())
     feed = FakeFeed()
     store, source = MemoryStore(tmp / "memory.db"), MessageSource("http://feed", client=feed.client)
-    agent = Agent(store, source, [CalendarExtractor(store, source, TZ)])
+    agent = Agent(store, source, [CalendarExtractor(store, source, TZ, llm=build_llm(Config.from_env()))])
 
     add(feed, ROUND_1, 0)
     agent.poll_once()

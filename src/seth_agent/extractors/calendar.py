@@ -8,13 +8,13 @@ import unicodedata
 from datetime import timedelta, tzinfo
 from typing import Literal
 
-import anthropic
 from pydantic import BaseModel, Field
 
 from ..groups import VolunteeringGroups
 from ..memory.store import SCHOOL, SCHOOL_CALENDAR, MemoryStore
 from ..source import Message, MessageSource
-from .base import Extractor, PermanentError, TransientError
+from ..llm import LLM, AnthropicLLM
+from .base import Extractor
 
 log = logging.getLogger(__name__)
 
@@ -91,9 +91,6 @@ class CalendarOps(BaseModel):
     operations: list[EventOp]
 
 
-TRANSIENT_STATUS = {401, 403, 404, 408, 409, 429}
-
-
 class CalendarExtractor(Extractor):
     """Keeps the school calendar, from every group that isn't a volunteering group.
 
@@ -109,19 +106,15 @@ class CalendarExtractor(Extractor):
         store: MemoryStore,
         source: MessageSource,
         tz: tzinfo,
-        model: str = "claude-opus-5-5",
-        effort: str = "medium",
+        llm: LLM | None = None,
         batch_size: int = 20,
-        client: anthropic.Anthropic | None = None,
         volunteering: VolunteeringGroups | None = None,
     ):
         self.store = store
         self.source = source
         self.tz = tz
-        self.model = model
-        self.effort = effort
         self.batch_size = batch_size
-        self.client = client or anthropic.Anthropic()
+        self.llm = llm or AnthropicLLM()
         self.volunteering = volunteering or VolunteeringGroups()
 
     # -- filtering ------------------------------------------------------------
@@ -149,37 +142,7 @@ class CalendarExtractor(Extractor):
     # -- extraction -------------------------------------------------------------
 
     def extract(self, batch: list[Message]) -> CalendarOps:
-        prompt = self.build_prompt(batch)
-        try:
-            response = self.client.beta.messages.parse(
-                model=self.model,
-                max_tokens=16000,
-                system=self.system_prompt,
-                messages=[{"role": "user", "content": prompt}],
-                output_format=CalendarOps,
-                output_config={"effort": self.effort},
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
-        except (anthropic.APIConnectionError, anthropic.CredentialsError) as e:
-            raise TransientError(str(e)) from e
-        except TypeError as e:
-            # The SDK raises TypeError when no credentials are configured at all.
-            if "authentication" not in str(e):
-                raise
-            raise TransientError("no Anthropic credentials: set ANTHROPIC_API_KEY") from e
-        except anthropic.APIStatusError as e:
-            if e.status_code in TRANSIENT_STATUS or e.status_code >= 500:
-                raise TransientError(f"{e.status_code}: {e.message}") from e
-            raise PermanentError(f"{e.status_code}: {e.message}") from e
-
-        if response.stop_reason == "refusal":
-            raise PermanentError(f"refusal: {response.stop_details}")
-        if response.stop_reason == "max_tokens":
-            raise PermanentError("hit max_tokens before finishing")
-        if response.parsed_output is None:
-            raise PermanentError("no parsed output")
-        return response.parsed_output
+        return self.llm.parse(self.system_prompt, self.build_prompt(batch), CalendarOps)
 
     def build_prompt(self, batch: list[Message]) -> str:
         first = batch[0]

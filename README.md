@@ -100,7 +100,7 @@ You need:
 
 - macOS with [Homebrew](https://brew.sh) Python 3.11 or newer. The system Python is too old.
 - [seth-ingestion](../seth-ingestion) set up and capturing the school's WhatsApp messages, with its `seth-feed` API running (`./feed.sh`, default `http://127.0.0.1:8080`).
-- An Anthropic API key from the [Claude Console](https://console.anthropic.com).
+- An Anthropic API key from the [Claude Console](https://console.anthropic.com), or a model running on this machine (see [Running a local model](#running-a-local-model)).
 
 **1. Install**
 
@@ -231,14 +231,19 @@ The defaults match a standard setup, so most people won't need to change anythin
 
 | Variable | Default | What it controls |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (none) | The Claude API key. **Required** |
+| `SETH_PROVIDER` | `anthropic` | Who reads the messages: `anthropic` (Claude) or `local` (a model on this machine) |
+| `ANTHROPIC_API_KEY` | (none) | The Claude API key. **Required** when the provider is `anthropic` |
 | `SETH_FEED_URL` | `http://127.0.0.1:8080` | Where seth-ingestion's `seth-feed` API is running |
 | `SETH_MEMORY_DB` | `./data/memory.db` | Where the calendar is kept |
 | `SETH_POLL_SECONDS` | `15` | How often to check for new messages |
 | `SETH_TZ` | the machine's timezone | Timezone for working out dates, e.g. `America/Los_Angeles` |
-| `SETH_MODEL` | `claude-opus-5-5` | The Claude model that reads the messages |
-| `SETH_EFFORT` | `medium` | How carefully Claude thinks: `low` is cheaper and faster, `high` is more careful with tricky dates |
-| `SETH_BATCH_SIZE` | `20` | Messages per Claude request |
+| `SETH_MODEL` | `claude-opus-5-5` | The Claude model that reads the messages (provider `anthropic`) |
+| `SETH_EFFORT` | `medium` | How carefully Claude thinks: `low` is cheaper and faster, `high` is more careful with tricky dates (provider `anthropic`) |
+| `SETH_LOCAL_URL` | `http://127.0.0.1:11434/v1` | The local model server's OpenAI-compatible address (provider `local`). The default is Ollama |
+| `SETH_LOCAL_MODEL` | `qwen3:30b-a3b` | The model name as the local server knows it (provider `local`) |
+| `SETH_LOCAL_API_KEY` | (none) | Only if your local server requires a key |
+| `SETH_LOCAL_TIMEOUT` | `600` | Seconds to wait for the local model to answer one batch |
+| `SETH_BATCH_SIZE` | `20` | Messages per request to the model. Lower it (say `8`) for a local model |
 | `SETH_VOLUNTEERING_GROUPS` | `Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am.` | WhatsApp groups to treat as volunteering groups, as `Name=usual routine` entries separated by `;`. The routine is optional. Setting it replaces the default (so include Preschool P.E. Teachers and its routine if you still want them); set it empty for none |
 | `SETH_API_HOST` / `SETH_API_PORT` | `127.0.0.1` / `8765` | Where the HTTP API listens |
 
@@ -248,10 +253,33 @@ Example:
 SETH_POLL_SECONDS=60 SETH_EFFORT=low .venv/bin/seth-agent run
 ```
 
+## Running a local model
+
+Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, a Qwen3 model in the 30B class at 4-bit is a good place to start.
+
+```bash
+ollama pull qwen3:30b-a3b
+SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b SETH_BATCH_SIZE=8 .venv/bin/seth-agent run
+```
+
+For another server, set `SETH_LOCAL_URL` (LM Studio's is `http://127.0.0.1:1234/v1`) and `SETH_LOCAL_MODEL`.
+
+Local models read dates and decide between "new event" and "update" less reliably than Claude. Before relying on one, run the live checks against it and compare with Claude's results:
+
+```bash
+SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/calendar_examples.py
+SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/volunteering_examples.py
+```
+
+The provider is chosen for the whole agent. Switching it doesn't redo old messages: they stay processed.
+
 ## Troubleshooting
 
 **"no Anthropic credentials: set ANTHROPIC_API_KEY"**
 The agent can't reach Claude without a key. Set `ANTHROPIC_API_KEY` and start it again. Nothing is lost: the waiting messages are processed as soon as the key works.
+
+**"local model server unreachable" or "404" with `SETH_PROVIDER=local`**
+The server isn't running at `SETH_LOCAL_URL`, or it doesn't have the model named in `SETH_LOCAL_MODEL` (with Ollama: `ollama pull <name>`). Nothing is lost: the batch is retried as soon as the server answers.
 
 **The calendar is empty**
 - Run `seth-agent -v once` and read the summary. `0 candidates` means seth-ingestion hasn't captured any messages yet.
@@ -274,7 +302,7 @@ Stop the agent and delete `data/memory.db`. The next run rebuilds the calendar f
 
 The school's chats contain messages from parents, students and staff, so the agent is built to keep that data close:
 
-- **Everything stays on the machine it runs on**, except the message text sent to Claude to read.
+- **Everything stays on the machine it runs on**, except the message text sent to Claude to read. With `SETH_PROVIDER=local`, nothing leaves it at all.
 - **Media files aren't sent.** Only text and captions are.
 - **The API listens only on the local machine** (`127.0.0.1`), so other devices on the network can't reach it. It has no authentication, so don't expose it more widely without adding some.
 - **The agent never changes seth-ingestion's data.** It only reads it, through the read-only `seth-feed` API.

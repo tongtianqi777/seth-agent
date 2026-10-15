@@ -17,7 +17,7 @@ class ScriptedCalendar(CalendarExtractor):
     """CalendarExtractor whose Claude call is replaced by a function of the batch."""
 
     def __init__(self, store, source, respond: Callable[[list[Message]], CalendarOps]):
-        super().__init__(store, source, TZ, client=object())  # type: ignore[arg-type]
+        super().__init__(store, source, TZ, llm=object())  # type: ignore[arg-type]
         self.respond = respond
         self.batches: list[list[str]] = []
         self.prompts: list[str] = []
