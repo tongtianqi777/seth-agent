@@ -14,7 +14,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="seth-agent")
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("run", help="poll messages.db continuously and serve the HTTP API")
+    sub.add_parser("run", help="poll seth-feed continuously and serve the HTTP API")
     sub.add_parser("once", help="process everything pending, then exit")
     cal = sub.add_parser("calendar", help="print the calendar")
     cal.add_argument("--from", dest="date_from", type=date.fromisoformat)

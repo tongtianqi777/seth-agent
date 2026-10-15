@@ -125,7 +125,7 @@ An empty range returns `"days": {}` and `"events": []`, with status `200`.
 
 Returns one [event](#the-event-object), cancelled or not. It adds two things to the usual fields:
 
-- each entry in `sources` has a `message` field with the original WhatsApp message, read live from seth-ingestion. It's `null` if that message no longer exists.
+- each entry in `sources` has a `message` field with the original WhatsApp message (`group`, `sender`, `sent_at`, `type`, `body`), read live from seth-feed. It's `null` if that message no longer exists. If seth-feed is down, the request fails with `502`.
 - a `history` array lists every change, oldest first.
 
 ```bash
@@ -171,7 +171,7 @@ Tells you whether the agent is keeping up. Use it for a status light, or to chec
 ```json
 {
   "last_poll_at": "2026-10-12T23:45:59Z",
-  "source_high_water": "2026-10-12T23:45:40Z",
+  "source_cursor": "43.2",
   "last_transient_error": null,
   "last_extraction_error": null,
   "active_events": 3
@@ -181,7 +181,7 @@ Tells you whether the agent is keeping up. Use it for a status light, or to chec
 | Field | Description |
 |---|---|
 | `last_poll_at` | When the agent last checked for messages. If this is more than a minute or two old, the poll loop has stopped |
-| `source_high_water` | The `ingested_at` time of the newest message fully processed. `null` before the first successful pass |
+| `source_cursor` | seth-feed's follow cursor for the newest message fully processed (an opaque string such as `43.2`). `null` before the first successful pass |
 | `last_transient_error` | The latest problem that will be retried, such as no API key, a rate limit or a network outage, prefixed with when it happened. It isn't cleared when things recover, so compare its time with `last_poll_at` |
 | `last_extraction_error` | The latest batch of messages that was given up on (refused or unreadable): `{id, extractor, message_ids, error, at}`, or `null` |
 | `active_events` | How many events are currently active |

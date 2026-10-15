@@ -23,14 +23,15 @@ seth-agent is the second half of a two-process pipeline:
 flowchart LR
     WA[WhatsApp] --> ING[seth-ingestion<br/>Go]
     ING -->|writes| MDB[(messages.db)]
-    MDB -->|read-only poll| AG[seth-agent<br/>Python]
+    MDB -->|read-only| FEED[seth-feed<br/>HTTP API :8080]
+    FEED -->|poll /messages/new| AG[seth-agent<br/>Python]
     AG <-->|structured output| CL[Claude API]
     AG -->|writes| MEM[(memory.db)]
     MEM --> API[HTTP API<br/>127.0.0.1:8765]
     API --> CLIENT[clients]
 ```
 
-The two processes share nothing but a SQLite file, which seth-agent only reads. Either one can be stopped, restarted or upgraded without the other noticing. When seth-agent comes back, it catches up from where it left off.
+The two processes share nothing but seth-feed's read-only HTTP API (see seth-ingestion's `docs/CONSUMING.md`). seth-agent never opens `messages.db`. Either one can be stopped, restarted or upgraded without the other noticing. When seth-agent comes back, it catches up from where it left off.
 
 Inside seth-agent, `seth-agent run` runs one process with two threads:
 
@@ -43,7 +44,7 @@ Inside seth-agent, `seth-agent run` runs one process with two threads:
 src/seth_agent/
 ├── cli.py                 Entry point: `seth-agent run | once | calendar`
 ├── config.py              Settings from SETH_* environment variables
-├── source.py              MessageSource: read-only access to seth-ingestion's messages.db
+├── source.py              MessageSource: read-only client for seth-ingestion's seth-feed HTTP API
 ├── agent.py               Agent: the poll loop, batching, transactions, high-water mark
 ├── api.py                 FastAPI app: /calendar, /events/{id}, /health
 ├── extractors/
@@ -53,9 +54,9 @@ src/seth_agent/
     ├── schema.sql         Memory database schema (idempotent)
     └── store.py           MemoryStore: all reads and writes to memory.db
 tests/
-├── conftest.py            Fixtures: a fake messages.db built from the real schema, a temp memory.db
-├── fixtures/ingestion_schema.sql   Copy of seth-ingestion's db/schema.sql
-├── test_source.py         Reading messages.db: windows, edits, replies, the WAL fallback
+├── conftest.py            Fixtures: a fake seth-feed (fakefeed.py), a temp memory.db
+├── fakefeed.py            In-memory stand-in for seth-feed behind an httpx MockTransport
+├── test_source.py         Reading seth-feed: cursor paging, groups, edits, replies, albums, errors
 ├── test_store.py          Date spans, overlap queries, updates, cancels, history
 ├── test_agent.py          The poll loop and extractor, with Claude replaced by scripted responses
 └── test_api.py            HTTP responses
@@ -76,9 +77,9 @@ sequenceDiagram
     participant M as MemoryStore
     participant X as CalendarExtractor
     participant C as Claude
-    A->>M: get source.high_water
-    A->>S: fetch_candidates(high_water − 10 min)
-    S-->>A: messages, oldest first
+    A->>M: get source.cursor
+    A->>S: fetch_new(cursor)
+    S-->>A: one page of messages, plus a new cursor
     A->>M: unprocessed("calendar", messages)
     M-->>A: new messages, and ones whose body changed
     A->>M: mark the ones X.wants() rejects as skipped
@@ -93,15 +94,15 @@ sequenceDiagram
         X->>M: add_event / update_event / cancel_event
         A->>M: mark batch extracted, COMMIT
     end
-    A->>M: advance source.high_water (only if nothing failed transiently)
+    A->>M: advance source.cursor (only if nothing failed transiently), next page if has_more
 ```
 
 Step by step:
 
-1. **Read candidates.** `MessageSource.fetch_candidates` returns rows from `messages.db` whose `ingested_at` is at or after the high-water mark, minus 10 minutes. The overlap matters because seth-ingestion can fill in an album's caption after the row is first written, and that update doesn't change `ingested_at`. Edit rows come with the original message's text (`edit_target_body`), and replies come with the quoted text (`quoted_body`).
-2. **Deduplicate.** `MemoryStore.unprocessed` drops messages the extractor has already handled with the same body hash. Because of the overlap, the same message is fetched several times, and this step keeps that harmless.
+1. **Read a page.** `MessageSource.fetch_new` calls seth-feed's `GET /messages/new?since=<cursor>` and gets up to 500 messages, oldest-arrived first (the agent sorts them by `sent_at`), with a new cursor. Each message carries its group (`group`, with `chat_jid` as the group's JID) and its latest text. Edits arrive as their own `edit` rows, and an album that gained a caption or photos is sent again (`updated: true`). Edit rows come with the original message's text (`edit_target_body`), and replies come with the quoted text (`quoted_body`), looked up with `GET /messages/{chat_jid}/{message_id}` when the target isn't in the page. The cursor is stored only after the page is fully handled, and the agent keeps reading pages while `has_more` is true.
+2. **Deduplicate.** `MemoryStore.unprocessed` drops messages the extractor has already handled with the same body hash. A message can be delivered more than once (an album sent again, or a page retried after a transient error), and this step keeps that harmless.
 3. **Filter.** `Extractor.wants` is a cheap, local check. Rejected messages are marked `skipped` straight away.
-4. **Batch.** The remaining messages are grouped by chat, so each prompt covers one conversation, and split into batches of `batch_size`.
+4. **Batch.** The remaining messages are grouped by WhatsApp group, so each prompt covers one conversation, and split into batches of `batch_size`.
 5. **Extract.** `Extractor.extract` does the slow work (the Claude call) **outside** any transaction, so the database is never locked during a network request.
 6. **Apply and mark.** `Extractor.apply` and `MemoryStore.mark_processed` run in **one transaction**. A crash between the Claude call and the commit means the batch is processed again next time. It never ends up half-applied.
 7. **Advance the high-water mark,** but only if no extractor hit a transient error. Otherwise a batch waiting to be retried could fall outside the 10-minute window.
@@ -114,7 +115,7 @@ Step by step:
 
 ### Filtering
 
-`wants()` passes a message to Claude only if it has a body (text, or a media caption), isn't of type `other`, and has at least one letter or digit. This excludes media without captions, reactions, locations and emoji-only replies. There is deliberately no keyword filter: phrasings like "we're off Monday" or "moved to Nov" are too varied for keywords to catch reliably, and one contact's message volume is low.
+`wants()` passes a message to Claude only if it has a body (text, or a media caption) and at least one letter or digit. This excludes media without captions, reactions, locations and emoji-only replies. The type isn't checked: seth-ingestion sometimes labels ordinary text as `other`. There is deliberately no keyword filter: phrasings like "we're off Monday" or "moved to Nov" are too varied for keywords to catch reliably, and the community's message volume is low.
 
 ### The prompt
 
@@ -195,7 +196,7 @@ The SDK itself already retries 429, 5xx and connection errors twice before seth-
 ## Concurrency
 
 - **memory.db** runs in WAL mode, so the API's reads never block the poller's writes. `MemoryStore` opens a short-lived connection for each operation, so neither thread shares a connection with the other.
-- **messages.db** is opened with `mode=ro`. A WAL database can't be opened read-only while its `-shm` file is missing, which is the normal state while seth-ingestion is stopped. In that case `MessageSource` falls back to `immutable=1` and logs a warning. That's only safe because nothing is writing to the file at that point. The next poll tries `mode=ro` again.
+- **seth-feed** is only ever called with `GET`. If it's unreachable or returns an error, `MessageSource` raises `SourceError`; `Agent.poll_once` treats that as a transient error, leaves the cursor where it was and retries with backoff.
 - **Connections are always closed** with `contextlib.closing`. A `with sqlite3.connect(...)` block on its own only commits, and leaves the connection open.
 
 ## Setting up and testing
@@ -210,7 +211,7 @@ The SDK itself already retries 429, 5xx and connection errors twice before seth-
 
 How the tests are set up:
 
-- **Real source schema.** `conftest.py` builds `messages.db` from `tests/fixtures/ingestion_schema.sql`, a copy of seth-ingestion's `db/schema.sql`, and writes rows the way seth-ingestion does. When seth-ingestion's schema changes, copy the new file over.
+- **Fake feed.** `tests/fakefeed.py` implements the parts of seth-feed the agent uses (`/health`, `/messages`, `/messages/new`, `/messages/{chat_jid}/{message_id}`) in memory, including edits, albums sent again and an outage switch. If seth-feed's behaviour changes (see its `docs/CONSUMING.md`), update it to match.
 - **No Claude.** `test_agent.py` subclasses `CalendarExtractor` as `ScriptedCalendar`, replacing `extract()` with a function that returns canned `CalendarOps`. The prompt is still built, so tests can check what Claude would see (`ext.prompts`).
 
 ### The live eval
@@ -251,7 +252,7 @@ from seth_agent.agent import build_agent
 
 agent = build_agent(Config.from_env())
 ext = agent.extractors[0]
-pending = [m for m in agent.store.unprocessed(ext.name, agent.source.fetch_candidates(None)) if ext.wants(m)]
+pending = [m for m in agent.store.unprocessed(ext.name, agent.source.fetch_new(None).messages) if ext.wants(m)]
 print(ext.build_prompt(pending[:20]))
 ```
 
@@ -317,7 +318,7 @@ What you get for free:
 ## Design decisions
 
 **Why poll instead of being notified?**
-seth-ingestion is a separate Go process that knows nothing about seth-agent. Polling SQLite every 15 seconds needs no changes to seth-ingestion and costs next to nothing at one contact's message volume. The poll filters on `ingested_at`, which seth-ingestion doesn't index, so each poll scans the table. That takes milliseconds even at tens of thousands of rows. If it ever matters, add an index on `messages (ingested_at)` in seth-ingestion's schema.
+seth-ingestion is a separate Go process that knows nothing about seth-agent. seth-feed has no push or webhook, only a follow cursor. Polling `/messages/new` every 15 seconds is cheap: when nothing is new it returns an empty page. The cursor makes each message arrive exactly once, with edits and album updates as separate deliveries, so the agent doesn't need an overlap window or its own bookkeeping of what it has read.
 
 **Why resolve dates against the send time?**
 So results don't depend on when processing happens. Catching up on a week-old backlog after downtime gives exactly the calendar you'd have had if the agent had been running.
@@ -333,8 +334,8 @@ A calendar you can't audit is hard to trust. With cancellations kept and every c
 
 ## Known limitations
 
-- **Only the contact's side of the chat.** seth-ingestion doesn't store your own messages, so "Is Monday OK?" → (your "yes") → "Great, see you then" is missing your reply.
-- **US date format.** `10/12` is read as October 12. Change the rule in `SYSTEM_PROMPT` if your contacts write day/month.
+- **Only the listed groups.** seth-ingestion records the groups in its `groups.txt`, not direct chats, so plans made in a private message never reach the calendar.
+- **US date format.** `10/12` is read as October 12. Change the rule in `SYSTEM_PROMPT` if your community writes day/month.
 - **Recurring events** ("every Tuesday") are stored at most as a single occurrence or range. There's no recurrence model yet.
 - **Past events stay** in the database, which is fine because queries filter by date. The prompt only shows Claude events from 7 days before the batch onward, so very old events don't clutter it.
 - **No API authentication.** The API is safe while it's bound to `127.0.0.1`. Add authentication before binding it to any other interface.

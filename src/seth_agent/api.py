@@ -6,9 +6,9 @@ from datetime import date, datetime, tzinfo
 
 from fastapi import FastAPI, HTTPException, Query
 
-from .agent import HIGH_WATER_KEY
+from .agent import CURSOR_KEY
 from .memory.store import MemoryStore
-from .source import MessageSource
+from .source import MessageSource, SourceError
 
 
 def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI:
@@ -37,11 +37,14 @@ def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI
         e = store.get_event(event_id)
         if e is None:
             raise HTTPException(404, "event not found")
-        messages = {m.key: m for m in source.get_messages([(s["chat_jid"], s["message_id"]) for s in e["sources"]])}
+        try:
+            messages = {m.key: m for m in source.get_messages([(s["chat_jid"], s["message_id"]) for s in e["sources"]])}
+        except SourceError as err:
+            raise HTTPException(502, str(err)) from err
         for s in e["sources"]:
             m = messages.get((s["chat_jid"], s["message_id"]))
             s["message"] = (
-                {"sender": m.sender, "sent_at": m.sent_at.isoformat(), "type": m.message_type, "body": m.body}
+                {"group": m.group, "sender": m.sender, "sent_at": m.sent_at.isoformat(), "type": m.message_type, "body": m.body}
                 if m
                 else None
             )
@@ -51,7 +54,7 @@ def create_app(store: MemoryStore, source: MessageSource, tz: tzinfo) -> FastAPI
     def health():
         return {
             "last_poll_at": store.get_state("agent.last_poll_at"),
-            "source_high_water": store.get_state(HIGH_WATER_KEY),
+            "source_cursor": store.get_state(CURSOR_KEY),
             "last_transient_error": store.get_state("agent.last_transient_error"),
             "last_extraction_error": store.last_error(),
             "active_events": len(store.list_events()),

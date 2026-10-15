@@ -56,7 +56,7 @@ Things worth knowing:
 You need:
 
 - macOS with [Homebrew](https://brew.sh) Python 3.11 or newer. The system Python is too old.
-- [seth-ingestion](../seth-ingestion) set up and capturing messages.
+- [seth-ingestion](../seth-ingestion) set up and capturing messages, with its `seth-feed` API running (`./feed.sh`, default `http://127.0.0.1:8080`).
 - An Anthropic API key from the [Claude Console](https://console.anthropic.com).
 
 **1. Install**
@@ -152,7 +152,7 @@ The defaults match a standard setup, so most people won't need to change anythin
 | Variable | Default | What it controls |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (none) | Your Claude API key. **Required** |
-| `SETH_SOURCE_DB` | `/Users/tnpbot/github.com/seth-ingestion/data/messages.db` | Where seth-ingestion stores messages |
+| `SETH_FEED_URL` | `http://127.0.0.1:8080` | Where seth-ingestion's `seth-feed` API is running |
 | `SETH_MEMORY_DB` | `./data/memory.db` | Where the calendar is kept |
 | `SETH_POLL_SECONDS` | `15` | How often to check for new messages |
 | `SETH_TZ` | your Mac's timezone | Timezone for working out dates, e.g. `America/Los_Angeles` |
@@ -180,8 +180,8 @@ The agent can't reach Claude without a key. Set `ANTHROPIC_API_KEY` and start it
 **An event has the wrong date or shouldn't be there**
 Open `http://127.0.0.1:8765/events/<id>` to see which messages it came from. If Claude often misreads your messages, try `SETH_EFFORT=high`. If the date depends on context the agent doesn't have, it can only go by what the messages say.
 
-**"messages.db not openable read-only … falling back to immutable mode"**
-This is harmless. It happens when seth-ingestion isn't running, and the agent reads the file another way. Messages that arrive later are picked up once seth-ingestion is running again.
+**"seth-feed unavailable, will retry"**
+The agent can't reach `seth-feed`. Start it from seth-ingestion (`./feed.sh`, or from its dashboard) and check that `SETH_FEED_URL` matches its address. Nothing is lost: the agent carries on from where it stopped as soon as the feed answers.
 
 **Port 8765 is already in use**
 Another copy of the agent may already be running. Stop it, or choose a different port with `SETH_API_PORT=8766`.
@@ -194,7 +194,7 @@ Stop the agent and delete `data/memory.db`. The next run rebuilds the calendar f
 - **Everything stays on your Mac**, except the message text sent to Claude to read.
 - **Media files aren't sent.** Only text and captions are.
 - **The API listens only on your own machine** (`127.0.0.1`), so other devices on your network can't reach it.
-- **The agent never changes seth-ingestion's database.** It only reads it.
+- **The agent never changes seth-ingestion's data.** It only reads it, through the read-only `seth-feed` API.
 - The calendar is a single SQLite file in `data/`, which git ignores.
 
 ## More documentation

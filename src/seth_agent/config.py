@@ -8,7 +8,7 @@ from datetime import datetime, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-DEFAULT_SOURCE_DB = "/Users/tnpbot/github.com/seth-ingestion/data/messages.db"
+DEFAULT_FEED_URL = "http://127.0.0.1:8080"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -22,7 +22,7 @@ def local_tz() -> tzinfo:
 
 @dataclass
 class Config:
-    source_db: Path
+    feed_url: str
     memory_db: Path
     poll_seconds: float
     model: str
@@ -36,7 +36,7 @@ class Config:
     def from_env(cls) -> "Config":
         env = os.environ.get
         return cls(
-            source_db=Path(env("SETH_SOURCE_DB", DEFAULT_SOURCE_DB)),
+            feed_url=env("SETH_FEED_URL", DEFAULT_FEED_URL),
             memory_db=Path(env("SETH_MEMORY_DB", str(REPO_ROOT / "data" / "memory.db"))),
             poll_seconds=float(env("SETH_POLL_SECONDS", "15")),
             model=env("SETH_MODEL", "claude-opus-5-5"),
