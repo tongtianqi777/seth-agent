@@ -1,6 +1,6 @@
 # HTTP API
 
-This is the reference for apps that read the calendar from seth-agent. To set up and run the agent, see the [README](../README.md). To understand how the data is stored, see [MEMORY.md](MEMORY.md).
+This is the reference for apps and tools that read the school calendar from seth-agent. As the agent starts maintaining more kinds of school information, they will be served here too. To set up and run the agent, see the [README](../README.md). To understand how the data is stored, see [MEMORY.md](MEMORY.md).
 
 ## Basics
 
