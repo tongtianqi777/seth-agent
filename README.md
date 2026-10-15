@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="SETH — Christian Education Institute" width="520">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/seth-logo-dark.png">
+    <img src="docs/assets/seth-logo.png" alt="SETH — Christian Education Institute" width="440">
+  </picture>
 </p>
 
 <h1 align="center">seth-agent</h1>
