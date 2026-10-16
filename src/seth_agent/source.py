@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -68,6 +69,25 @@ def _text(raw: dict[str, Any]) -> str | None:
     if raw["message_type"] == "edit":
         return raw.get("body")
     return raw.get("current_body", raw.get("body"))
+
+
+def _mentions(*raws: dict[str, Any] | None) -> dict[str, str]:
+    """{id: name} for the people @-mentioned in these feed rows (older feeds have no `mentions`)."""
+    names: dict[str, str] = {}
+    for raw in raws:
+        for x in (raw or {}).get("mentions") or []:
+            if x.get("id") and x.get("name"):
+                names[str(x["id"])] = x["name"]
+    return names
+
+
+def _resolve_mentions(text: str | None, names: dict[str, str]) -> str | None:
+    """WhatsApp writes a mention as "@<id>" (a number, not a name). Swap in the person's name."""
+    if not text or not names:
+        return text
+    # Longest ids first, so an id that starts with another id is not cut short.
+    ids = "|".join(re.escape(i) for i in sorted(names, key=len, reverse=True))
+    return re.sub(rf"@({ids})(?!\w)", lambda m: "@" + names[m.group(1)], text)
 
 
 class MessageSource:
@@ -145,6 +165,9 @@ class MessageSource:
         for r in raws:
             original = lookup(r["chat_jid"], r.get("edit_target_id")) if r["message_type"] == "edit" else None
             quoted = lookup(r["chat_jid"], r.get("quoted_id"))
+            # An edited message's mentions cover both its original text and the latest edit.
+            names = _mentions(r, original)
+            quoted_names = _mentions(quoted)
             out.append(
                 Message(
                     chat_jid=r["chat_jid"],
@@ -153,13 +176,13 @@ class MessageSource:
                     sent_at=parse_ts(r["sent_at"]),
                     ingested_at=r["ingested_at"],
                     message_type=r["message_type"],
-                    body=_text(r),
+                    body=_resolve_mentions(_text(r), names),
                     edit_target_id=r.get("edit_target_id"),
                     quoted_id=r.get("quoted_id"),
                     media_file_count=r.get("media_file_count", 0),
                     # The original as first sent: its current_body already includes this very edit.
-                    edit_target_body=original.get("body") if original else None,
-                    quoted_body=_text(quoted) if quoted else None,
+                    edit_target_body=_resolve_mentions(original.get("body"), names) if original else None,
+                    quoted_body=_resolve_mentions(_text(quoted), quoted_names) if quoted else None,
                     group=r.get("group") or "",
                 )
             )

@@ -43,6 +43,41 @@ def test_edit_and_reply_join_original_text(feed, source):
     assert msgs["R"].quoted_body == "Dad's flight is on 10/19"
 
 
+ZEBAO = {"id": "277600983331013", "jid": "277600983331013@lid", "name": "Zebao Gao", "phone": "12404758388"}
+
+
+def test_mentions_are_replaced_by_names(feed, source):
+    feed.add("A", "tomorrow is @277600983331013", mentions=[ZEBAO])
+    feed.add("B", "thanks @277600983331013 and @999", mentions=[ZEBAO])
+    msgs = {m.message_id: m for m in source.fetch_new(None).messages}
+    assert msgs["A"].body == "tomorrow is @Zebao Gao"
+    # An id the feed did not list is left alone. So is an id that only starts with a listed one.
+    assert msgs["B"].body == "thanks @Zebao Gao and @999"
+    feed.add("C", "ask @2776009833310139", mentions=[ZEBAO])
+    [c] = source.fetch_new("2").messages
+    assert c.body == "ask @2776009833310139"
+
+
+def test_mentions_work_in_edits_and_quoted_replies(feed, source):
+    feed.add("A", "it is @277600983331013 tomorrow", sent_at="2026-10-12T10:00:00Z", mentions=[ZEBAO])
+    # The feed gives an edited message's mentions for both the original text and the edit.
+    feed.add("E", "it is @277600983331013 on Friday", sent_at="2026-10-12T10:05:00Z",
+             message_type="edit", edit_target_id="A", mentions=[ZEBAO])
+    feed.add("R", "ok", sent_at="2026-10-12T10:06:00Z", quoted_id="A")
+    msgs = {m.message_id: m for m in source.fetch_new(None).messages}
+    assert msgs["A"].body == "it is @Zebao Gao on Friday"
+    assert msgs["E"].body == "it is @Zebao Gao on Friday"
+    assert msgs["E"].edit_target_body == "it is @Zebao Gao tomorrow"
+    assert msgs["R"].quoted_body == "it is @Zebao Gao on Friday"
+
+
+def test_feed_without_mentions_still_works(feed, source):
+    feed.add("A", "tomorrow is @277600983331013")
+    del feed.rows[0]["mentions"]
+    [m] = source.fetch_new(None).messages
+    assert m.body == "tomorrow is @277600983331013"
+
+
 def test_reply_to_message_outside_the_page_is_fetched(feed, source):
     feed.add("A", "Picnic is Saturday", sent_at="2026-10-12T10:00:00Z")
     feed.add("R", "what time?", sent_at="2026-10-12T10:06:00Z", quoted_id="A")
