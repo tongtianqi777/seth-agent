@@ -1,7 +1,7 @@
 """Live check of the volunteering extractor against Claude: "it's me this week" style messages.
 
 Costs a few API calls. Run with:  ANTHROPIC_API_KEY=... .venv/bin/python evals/volunteering_examples.py
-To try a local model instead:  SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/volunteering_examples.py
+To try a local model instead:  SETH_PROVIDER=local SETH_LOCAL_MODEL=gemma4:31b .venv/bin/python evals/volunteering_examples.py
 """
 
 from __future__ import annotations

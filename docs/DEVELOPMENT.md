@@ -109,7 +109,7 @@ sequenceDiagram
 
 Step by step:
 
-1. **Read a page.** `MessageSource.fetch_new` calls seth-feed's `GET /messages/new?since=<cursor>` and gets up to 500 messages, oldest-arrived first (the agent sorts them by `sent_at`), with a new cursor. Each message carries its group (`group`, with `chat_jid` as the group's JID) and its latest text. Edits arrive as their own `edit` rows, and an album that gained a caption or photos is sent again (`updated: true`). Edit rows come with the original message's text (`edit_target_body`), and replies come with the quoted text (`quoted_body`), looked up with `GET /messages/{chat_jid}/{message_id}` when the target isn't in the page. The cursor is stored only after the page is fully handled, and the agent keeps reading pages while `has_more` is true.
+1. **Read a page.** `MessageSource.fetch_new` calls seth-feed's `GET /messages/new?since=<cursor>` and gets up to 500 messages, oldest-arrived first (the agent sorts them by `sent_at`), with a new cursor. Each message carries its group (`group`, with `chat_jid` as the group's JID) and its latest text. Edits arrive as their own `edit` rows, and an album that gained a caption or photos is sent again (`updated: true`). WhatsApp writes an @-mention as the person's id (`@277600983331013`), so each message's `mentions` list is used to swap in the name (`@Zebao Gao`) in the text, the original text of an edit and the quoted text of a reply. An id that isn't in `mentions` is left as it is. Edit rows come with the original message's text (`edit_target_body`), and replies come with the quoted text (`quoted_body`), looked up with `GET /messages/{chat_jid}/{message_id}` when the target isn't in the page. The cursor is stored only after the page is fully handled, and the agent keeps reading pages while `has_more` is true.
 2. **Deduplicate.** `MemoryStore.unprocessed` drops messages the extractor has already handled with the same body hash. A message can be delivered more than once (an album sent again, or a page retried after a transient error), and this step keeps that harmless.
 3. **Filter.** `Extractor.wants` is a cheap, local check. Rejected messages are marked `skipped` straight away.
 4. **Batch.** The remaining messages are grouped by WhatsApp group, so each prompt covers one conversation, and split into batches of `batch_size`.
@@ -230,7 +230,7 @@ The SDK itself already retries 429, 5xx and connection errors twice before seth-
 
 How the tests are set up:
 
-- **Fake feed.** `tests/fakefeed.py` implements the parts of seth-feed the agent uses (`/health`, `/messages`, `/messages/new`, `/messages/{chat_jid}/{message_id}`) in memory, including edits, albums sent again and an outage switch. If seth-feed's behaviour changes (see its `docs/CONSUMING.md`), update it to match.
+- **Fake feed.** `tests/fakefeed.py` implements the parts of seth-feed the agent uses (`/health`, `/messages`, `/messages/new`, `/messages/{chat_jid}/{message_id}`) in memory, including edits, mentions, albums sent again and an outage switch. If seth-feed's behaviour changes (see its `docs/CONSUMING.md`), update it to match.
 - **No Claude.** `test_agent.py` subclasses `CalendarExtractor` as `ScriptedCalendar`, replacing `extract()` with a function that returns canned `CalendarOps`. The prompt is still built, so tests can check what Claude would see (`ext.prompts`).
 
 ### The live evals

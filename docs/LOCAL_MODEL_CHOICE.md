@@ -53,7 +53,7 @@ Two terms: a **dense** model uses all its parameters for every token, so it is s
 3. **Make one model do both text and photos if the evals allow it.** One loaded model is simpler to run and leaves memory free. If the best text model is weak at vision (or the reverse), run two with `OLLAMA_MAX_LOADED_MODELS=2`; the memory budget above allows it.
 4. **Keep Claude for the hard cases.** A local model is the right default when privacy is the point; Claude is the better reader. They aren't exclusive (see [When to stay on Claude](#when-to-stay-on-claude)).
 
-`qwen3:30b-a3b` is the default in the code only so that `SETH_PROVIDER=local` works out of the box. Change it to whatever wins.
+The default in the code is now `gemma4:31b`, which passed all 31 checks in `compare_local_models.sh` (2026-10-16) against 29 for `qwen3:32b`, 26 for `gemma4:26b-a4b` and 25 for `qwen3:30b-a3b`. Set `SETH_LOCAL_MODEL` to use another.
 
 ## How to decide between models
 

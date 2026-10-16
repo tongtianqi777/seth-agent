@@ -38,12 +38,13 @@ class FakeFeed:
         chat_jid: str = CHAT,
         group: str = GROUP,
         sender: str = "Alex Doe",
+        mentions: list[dict[str, str]] | None = None,
     ) -> None:
         self.rows.append({
             "seq": len(self.rows) + 1, "chat_jid": chat_jid, "message_id": message_id, "group": group,
             "sender": sender, "sender_jid": "15555550123@s.whatsapp.net", "sender_phone": "15555550123",
             "sent_at": sent_at, "ingested_at": ingested_at or sent_at, "message_type": message_type,
-            "body": body, "edit_target_id": edit_target_id, "quoted_id": quoted_id,
+            "body": body, "mentions": mentions or [], "edit_target_id": edit_target_id, "quoted_id": quoted_id,
             "media_file_count": media_file_count, "source": "live", "files": [],
         })
         self.log.append((len(self.rows), False))

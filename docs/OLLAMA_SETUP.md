@@ -37,17 +37,17 @@ Leave it on `127.0.0.1`. Don't set `OLLAMA_HOST=0.0.0.0`: the server has no auth
 ## 3. Pull a model
 
 ```bash
-ollama pull qwen3:30b-a3b
+ollama pull gemma4:31b
 ```
 
-The download is about 18–20 GB. Models are kept in `~/.ollama/models`, which is also where the disk space goes if you try several, so remove the ones you drop (`ollama rm <name>`).
+The download is about 19 GB. Models are kept in `~/.ollama/models`, which is also where the disk space goes if you try several, so remove the ones you drop (`ollama rm <name>`).
 
 The tag above is the one seth-agent defaults to. Tags change as new releases arrive, so before pulling check the library page for the family ([qwen3](https://ollama.com/library/qwen3), [gemma4](https://ollama.com/library/gemma4), [qwen3-vl](https://ollama.com/library/qwen3-vl)) and pick the 4-bit build of the size you want. See what you have with `ollama list`.
 
 Try it by hand first:
 
 ```bash
-ollama run qwen3:30b-a3b "下周一学校放假。Which date is that if today is Monday 2026-10-12?"
+ollama run gemma4:31b "下周一学校放假。Which date is that if today is Monday 2026-10-12?"
 ```
 
 ## 4. Give it a long enough context
@@ -59,7 +59,7 @@ Ollama gives a model a fixed context window (how much text it can read at once),
 The OpenAI-compatible endpoint seth-agent uses cannot set the window per request, so set it on the model. Create a file named `Modelfile` anywhere (it doesn't need to live in this repo):
 
 ```
-FROM qwen3:30b-a3b
+FROM gemma4:31b
 PARAMETER num_ctx 32768
 PARAMETER temperature 0
 ```
