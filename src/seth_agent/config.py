@@ -58,7 +58,7 @@ class Config:
             model=env("SETH_MODEL", "claude-opus-5-5"),
             effort=env("SETH_EFFORT", "medium"),
             local_url=env("SETH_LOCAL_URL", "http://127.0.0.1:11434/v1"),
-            local_model=env("SETH_LOCAL_MODEL", "qwen3:30b-a3b"),
+            local_model=env("SETH_LOCAL_MODEL", "gemma4:31b"),
             local_api_key=env("SETH_LOCAL_API_KEY") or None,
             local_timeout=float(env("SETH_LOCAL_TIMEOUT", "600")),
             local_max_tokens=int(env("SETH_LOCAL_MAX_TOKENS", "16000")),

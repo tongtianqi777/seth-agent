@@ -4,7 +4,7 @@ The other two scripts in this folder are short and in English. This one is the h
 it runs both extractors together, as in production, and each scenario starts from an empty database.
 
 Costs a few API calls. Run with:  ANTHROPIC_API_KEY=... .venv/bin/python evals/bilingual_examples.py [scenario ...]
-To try a local model instead:  SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/bilingual_examples.py
+To try a local model instead:  SETH_PROVIDER=local SETH_LOCAL_MODEL=gemma4:31b .venv/bin/python evals/bilingual_examples.py
 
 Scenarios: chinese_school, mixed_language, chinese_volunteering, duplicate_across_groups, injection.
 """
