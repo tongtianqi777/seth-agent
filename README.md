@@ -241,7 +241,7 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_MODEL` | `claude-opus-5-5` | The Claude model that reads the messages (provider `anthropic`) |
 | `SETH_EFFORT` | `medium` | How carefully Claude thinks: `low` is cheaper and faster, `high` is more careful with tricky dates (provider `anthropic`) |
 | `SETH_LOCAL_URL` | `http://127.0.0.1:11434/v1` | The local model server's OpenAI-compatible address (provider `local`). The default is Ollama |
-| `SETH_LOCAL_MODEL` | `qwen3:30b-a3b` | The model name as the local server knows it (provider `local`) |
+| `SETH_LOCAL_MODEL` | `gemma4:31b` | The model name as the local server knows it (provider `local`) |
 | `SETH_LOCAL_API_KEY` | (none) | Only if your local server requires a key |
 | `SETH_LOCAL_TIMEOUT` | `600` | Seconds to wait for the local model to answer one batch |
 | `SETH_LOCAL_MAX_TOKENS` | `16000` | The most the local model may write for one batch, thinking included. A model that reasons at length can hit this before it answers, which fails the batch ("hit max_tokens before finishing"). Raise it if you see that |
@@ -257,11 +257,11 @@ SETH_POLL_SECONDS=60 SETH_EFFORT=low .venv/bin/seth-agent run
 
 ## Running a local model
 
-Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, a Qwen3 model in the 30B class at 4-bit is a good place to start. The full walkthrough is in [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md), and the reasoning behind the model choice in [docs/LOCAL_MODEL_CHOICE.md](docs/LOCAL_MODEL_CHOICE.md).
+Instead of Claude, the agent can use a model running on the same machine, so no message text leaves it. Any server with an OpenAI-compatible `/chat/completions` endpoint works: [Ollama](https://ollama.com), LM Studio, `mlx-lm` or llama.cpp. For a 64 GB Mac, `gemma4:31b` (the default) passed every check in the evals, ahead of the Qwen3 models. The full walkthrough is in [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md), and the reasoning behind the model choice in [docs/LOCAL_MODEL_CHOICE.md](docs/LOCAL_MODEL_CHOICE.md).
 
 ```bash
-ollama pull qwen3:30b-a3b
-SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b SETH_BATCH_SIZE=8 .venv/bin/seth-agent run
+ollama pull gemma4:31b
+SETH_PROVIDER=local SETH_LOCAL_MODEL=gemma4:31b SETH_BATCH_SIZE=8 .venv/bin/seth-agent run
 ```
 
 For another server, set `SETH_LOCAL_URL` (LM Studio's is `http://127.0.0.1:1234/v1`) and `SETH_LOCAL_MODEL`.
@@ -269,9 +269,9 @@ For another server, set `SETH_LOCAL_URL` (LM Studio's is `http://127.0.0.1:1234/
 Local models read dates and decide between "new event" and "update" less reliably than Claude. Before relying on one, run the live checks against it and compare with Claude's results:
 
 ```bash
-SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/calendar_examples.py
-SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/volunteering_examples.py
-SETH_PROVIDER=local SETH_LOCAL_MODEL=qwen3:30b-a3b .venv/bin/python evals/bilingual_examples.py
+SETH_PROVIDER=local SETH_LOCAL_MODEL=gemma4:31b .venv/bin/python evals/calendar_examples.py
+SETH_PROVIDER=local SETH_LOCAL_MODEL=gemma4:31b .venv/bin/python evals/volunteering_examples.py
+SETH_PROVIDER=local SETH_LOCAL_MODEL=gemma4:31b .venv/bin/python evals/bilingual_examples.py
 ```
 
 The third one (Chinese and mixed messages, repeats across groups, prompt injection) is the hardest, and the best test of a model.
