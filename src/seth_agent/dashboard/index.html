@@ -172,7 +172,7 @@
   <section id="panel-volunteering" role="tabpanel" aria-labelledby="tab-volunteering" class="card" hidden>
     <div class="row">
       <div>
-        <h2>Volunteering</h2>
+        <h2 id="vol-title">Volunteering</h2>
         <p class="sub" id="vol-sub" style="margin-bottom:12px">Volunteer schedules and activities, from the parent groups that organize them. Each group has its own calendar.</p>
       </div>
       <span class="spacer"></span>
@@ -582,6 +582,7 @@ function renderVolunteeringPicker() {
     };
     return b;
   }));
+  $("vol-title").textContent = vol.selected || "Volunteering";
   $("vol-sub").textContent = vol.names.length === 1
     ? "Volunteer schedule and activities from the \u201c" + vol.names[0] + "\u201d parent group. It changes as the plans do."
     : "Volunteer schedules and activities, from the parent groups that organize them. Each group has its own calendar.";
