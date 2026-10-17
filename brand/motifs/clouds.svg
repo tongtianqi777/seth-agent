@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="240" viewBox="0 0 700 240">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><g filter="url(#wash)"><circle cx="150" cy="110" r="41" fill="#fff" opacity="0.92"/><circle cx="200" cy="90" r="52" fill="#fff" opacity="0.92"/><circle cx="256" cy="106" r="45" fill="#fff" opacity="0.92"/><circle cx="303" cy="117" r="32" fill="#fff" opacity="0.92"/><circle cx="107" cy="121" r="31" fill="#fff" opacity="0.92"/><rect x="87" y="119" width="252" height="32" rx="16" fill="#fff" opacity="0.92"/></g><g filter="url(#wash)"><circle cx="480" cy="150" r="32" fill="#fff" opacity="0.92"/><circle cx="518" cy="135" r="41" fill="#fff" opacity="0.92"/><circle cx="563" cy="147" r="35" fill="#fff" opacity="0.92"/><circle cx="599" cy="156" r="25" fill="#fff" opacity="0.92"/><circle cx="446" cy="158" r="24" fill="#fff" opacity="0.92"/><rect x="431" y="157" width="196" height="25" rx="13" fill="#fff" opacity="0.92"/></g></svg>

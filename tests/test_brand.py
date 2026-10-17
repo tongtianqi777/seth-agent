@@ -23,3 +23,17 @@ def test_dashboard_logos_match_the_brand_kit():
         assert (BRAND / brand_file).read_bytes() == (DASHBOARD / dashboard_file).read_bytes(), (
             f"{dashboard_file} has drifted from brand/{brand_file}"
         )
+
+
+def test_the_flyer_layout_is_where_the_manifest_says():
+    manifest = json.loads((BRAND / "brand.json").read_text())
+    assert (BRAND / manifest["templates_dir"] / "event.html").is_file()
+
+
+def test_the_slogan_and_address_are_exactly_the_schools():
+    manifest = json.loads((BRAND / "brand.json").read_text())
+    slogan = manifest["slogan"]
+    assert slogan["text"] == "Christ-centered education • Unity among family, school, & church • Building Christian character"
+    assert " • ".join(slogan["parts"]) == slogan["text"]
+    assert manifest["address"]["text"] == "1395 Hollenbeck Ave, Sunnyvale, CA 94087"
+    assert slogan["use"] and manifest["address"]["use"]

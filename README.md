@@ -64,6 +64,7 @@ When plans change, the calendar changes with them. *"The field trip is moved to 
 - [The dashboard](#the-dashboard)
 - [Reading the calendar](#reading-the-calendar)
 - [Photo search](#photo-search)
+- [Flyers](#flyers)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Privacy](#privacy)
@@ -73,6 +74,7 @@ When plans change, the calendar changes with them. *"The field trip is moved to 
 
 The goal is an agent that holds the school's whole picture, then uses it to do the administrative writing and compiling that staff do by hand today:
 
+- **Flyers** in the school's branding, made from a sentence. Working today (see [Flyers](#flyers)), with photos from the school's library, a fresh design every time, and, if an image provider is set up, generated artwork.
 - **Weekly newsletters** compiled from the calendar and the latest updates.
 - **An annual yearbook** built from the school's photos, with captions drawn from what the agent knows happened.
 - **Video compilations** of the year's events, assembled from the media it maintains.
@@ -209,6 +211,7 @@ Groups are only sorted from now on. Messages the agent has already read stay whe
 | `seth-agent calendar --all` | Also shows cancelled events |
 | `seth-agent calendar --group "Preschool P.E. Teachers"` | Prints that volunteering group's calendar instead of the school calendar |
 | `seth-agent photos "children eating meals" --group Preschool` | Finds photos by describing them (`--group` is optional). Needs [photo search](#photo-search) |
+| `seth-agent flyer "Open House on 11/7/2026 at 10am - 12pm"` | Makes a flyer in the school's branding and saves it as a PNG. See [Flyers](#flyers) |
 
 Add `-v` before any command for detailed logs, e.g. `seth-agent -v once`.
 
@@ -299,6 +302,100 @@ Good to know:
 - It finds what a photo looks like. It can't read writing in a photo or tell which child is which.
 - Only photos are indexed, not videos.
 
+## Flyers
+
+Describe an event in a sentence and the agent makes a flyer for it in the school's branding:
+
+```bash
+.venv/bin/seth-agent flyer "Open House on 11/7/2026 at 10am - 12pm"
+```
+
+```
+Read from your request: Open House | Saturday, November 7, 2026 | 10:00 AM – 12:00 PM
+data/flyers/2026-10-17-open-house-on-11-7-2026-at-10am-12pm.png
+```
+
+The flyer is a 1080 × 1350 PNG, a shape that shows whole in WhatsApp and on phones. The line it prints first is what the agent understood, so check the date and time before you share the flyer. Dates are read US style (11/7 is November 7), and a day with no year means its next coming. Use `-o file.png` to choose where it is saved.
+
+How it is made matters, because a wrong date on a flyer is worse than a plain flyer:
+
+1. The model (Claude or the local one, whichever `SETH_PROVIDER` selects) reads the request into a few fields: the event's name, date, start and end time, place, and any other details. It only uses what you wrote, and leaves out the rest.
+2. The page is designed (see [Design](#design)) from the [brand kit](brand/README.md): the real logo file, the school's colors, its font and art kit, the school's slogan, and the navy, green and gold stripe. The date and time are written by the program from the structured fields, so they are spelled the same way every time. So is the school's address, which is printed when people are meant to come to the school (an open house, picture day) and left off when the event is somewhere else or nobody needs to come. Check the first line the command prints: it ends with "school address" when the address was added. Add `--address` or `--no-address` to decide yourself.
+3. Chrome draws the page to a PNG. This needs Google Chrome (or Chromium or Edge) on the machine, and nothing else to install.
+
+### Design
+
+**Every flyer is designed from scratch.** The model (Claude or the local one) writes the page itself as HTML and CSS, with its own SVG drawings, so an open house, a picnic and a picture day don't look alike. Each time it is pointed at two random looks (a poster, a scrapbook, a chalkboard, an invitation card, bunting and balloons, a calendar page, and so on) and told to adapt them. You can steer it:
+
+```bash
+.venv/bin/seth-agent flyer "Spring Picnic on 4/17/2027 from 11am to 2pm at Baylands Park" --idea "like a gingham picnic blanket"
+```
+
+It builds the page from the school's **art kit**: [brand/motifs/](brand/motifs), 16 hand-drawn motifs in the school's palette (bunting, balloons, sun, hills, tree, schoolhouse, flowers, butterflies, crayons, leaves, ribbons, sparkles, clouds, books). They give even a modest model something finished to compose with, and it can add its own SVG on top. This is also the answer to flyers without an image provider: no key is needed for good-looking artwork.
+
+**The model never types the facts.** It writes tokens such as `{{TITLE}}`, `{{DATE}}`, `{{ADDRESS}}`, `{{LOGO}}` and `{{PHOTO_1}}`, and the program swaps in the exact words and the real image files. So the page can't misspell a date, redraw the logo or invent a detail. Before a page is accepted, the program checks it, and a page that breaks the rules is sent back with the problems listed (up to three times):
+
+- it must use every word and picture the flyer has (including its photos), show the logo and the slogan, and have background artwork, and print no words that don't come from the request (only the labels "When" and "Where");
+- it may not load anything from outside or run scripts, and may use only the school's colors and font;
+- Chrome draws it, and it is refused if any text runs off the page, overlaps other text or is covered by a picture, if text is tiny, or if the logo or a photo is too small or has something painted over it.
+
+If the model can't make a page that passes, the flyer is made with the standard layout instead, and the command says why.
+
+How long it takes depends on the model. A model on this machine needs to think to lay a page out, so expect up to about ten minutes with its revisions (Claude should be much quicker, though that hasn't been timed here; `SETH_DESIGN_EFFORT` and `SETH_DESIGN_MAX_TOKENS` control that; the local default is `low` and 40000). For an instant flyer, pick a fixed layout from [brand/templates](brand/templates) with `--layout event` or `--layout event-collage`.
+
+You can also design a flyer yourself, or have Claude Code do it, and run it through the same rules with `--design-file page.html`. The page uses the same tokens (the full list is printed in [design.py](src/seth_agent/flyer/design.py)), and the command refuses it, saying why, if it breaks a rule.
+
+### Photos
+
+**A flyer gets photos from the school's photo library when that is possible and appropriate.** The model describes what kind of photo would suit the event ("children in a classroom", "children playing outside"), and the same CLIP search that powers [photo search](#photo-search) finds up to three. Photos that look alike (burst shots, or one sent to two groups) are only used once, and only photos that match well enough are used, so a flyer may get fewer than three. The model also decides when photos are *not* appropriate, and leaves them off a closure, a cancellation, a deadline or payment reminder, a weather or safety notice, or anything sad or serious. And if the photo library isn't available, or nothing in it matches, the flyer is made without photos and the command says so.
+
+```
+Photo #48: Preschool, 2026-10-05 (score 0.31)
+Photo #60: Preschool, 2026-10-04 (score 0.31)
+Photo #35: Preschool, 2026-10-07 (score 0.30)
+```
+
+- **Photos come from every group by default.** To limit them to one group, set `SETH_FLYER_PHOTO_GROUP` to its exact name, or use `--photo-group "Preschool"` for one flyer (`--photo-group all` goes back to every group).
+- **The command lists the photos it used.** Look at them before you share the flyer, because the pictures show children. To swap one, find the photo you want in the dashboard's Media tab and use its id: `--photo 48 --photo 12` (a photo you pick is used as it is, with no search, and it is an error if it can't be used). `--no-photos` leaves photos off a flyer, and `--photos 2` asks for fewer or more (1 to 6).
+- Photos are turned upright and shrunk to fit the page. The originals are never changed.
+- Photos go into the design as a token each (`{{PHOTO_1}}`, ...), which the designer must use, unaltered and clear of other pictures. `--layout event` or `--layout event-collage` use a fixed layout instead of a designed one.
+
+### Always on every flyer
+
+Whatever the event, and whether the page is designed, uses a fixed layout or comes from `--design-file`, every flyer has:
+
+- the school's real **logo**, at a readable size and with nothing painted over it;
+- the school's **slogan**, word for word;
+- the school's **colors and font** only (the designer is refused if it uses any other hex color, color name or font);
+- the school's **address** when the event is at the school;
+- a **background of artwork**, never a bare page. With no image provider it is a scene composed from the school's [art kit](brand/motifs): autumn leaves for Thanksgiving, crayons for picture day, bunting and balloons for a party, spring flowers, a sunny schoolyard otherwise, picked from the event's wording and the season. Generated artwork or your own picture (`--art-file`) replaces it, and if generated artwork fails the scene stands in.
+
+### Artwork
+
+Without an image provider the flyer is clean and plain. With one, an image model paints a background picture that suits the event (an open door and an oak tree for an open house, say), in the school's palette and a fixed picture-book style written in the `art` section of [brand.json](brand/brand.json). The picture never carries words, so every word and number on the flyer is still written by the program. A soft cream veil keeps the text easy to read over it.
+
+```bash
+export SETH_IMAGE_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+.venv/bin/seth-agent flyer "Open House on 11/7/2026 at 10am - 12pm"
+```
+
+```
+Read from your request: Open House | Saturday, November 7, 2026 | 10:00 AM – 12:00 PM
+Artwork: data/flyers/2026-10-17-open-house-on-11-7-2026-at-10am-12pm-art.png  (reuse it with --art-file)
+data/flyers/2026-10-17-open-house-on-11-7-2026-at-10am-12pm.png
+```
+
+- **Each flyer's picture is made fresh, and OpenAI bills for each one.** The picture is saved next to the flyer. To change the wording and keep the picture, run the command again with `--art-file` pointing at it: that makes no new picture and costs nothing. `--art-file` also takes any picture of your own, such as a photo from the school's library.
+- **If the picture can't be made** (the service is down, or it refuses the request), the flyer is still made without it, and the command says why.
+- `--no-art` makes a plain flyer even when a provider is set up.
+- Only the event's name, tagline and extra details go to the image provider, as a short description of a scene. The date, time and place don't, and neither do the school's messages.
+- Any server that copies OpenAI's images API works: set `SETH_IMAGE_URL` to its address. A model running on this machine behind such a server would keep everything local.
+
+To change how the pictures look, edit the `art` section of [brand/brand.json](brand/brand.json). It is added to every picture request word for word.
+
+The layout is [brand/templates/event.html](brand/templates/event.html). To change how flyers look, edit it and look at the result with the command above.
+
 ## Configuration
 
 The defaults match a standard setup, so most people won't need to change anything. To change a setting, set an environment variable before running:
@@ -322,6 +419,18 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_VOLUNTEERING_GROUPS` | `Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am.` | WhatsApp groups to treat as volunteering groups, as `Name=usual routine` entries separated by `;`. The routine is optional. Setting it replaces the default (so include Preschool P.E. Teachers and its routine if you still want them); set it empty for none |
 | `SETH_MEDIA_INDEX` | `1` | Index photos for [photo search](#photo-search) when the `media` extra is installed. `0` turns it off |
 | `SETH_MEDIA_MODEL` | `openai/clip-vit-base-patch16` | The CLIP model that describes photos and searches (a Hugging Face name). Changing it means indexing the photos again |
+| `SETH_BRAND_DIR` | `brand/` in this repo | The [brand kit](brand/README.md) that flyers are made from |
+| `SETH_FLYER_DIR` | `data/flyers/` | Where `seth-agent flyer` saves its PNGs |
+| `SETH_CHROME` | (found automatically) | The Chrome, Chromium or Edge that draws flyers, if it isn't in the usual place |
+| `SETH_FLYER_PHOTO_GROUP` | `all` | The group [flyer photos](#photos) come from, by its exact name. `all` (or empty) means every group |
+| `SETH_FLYER_PHOTO_MIN_SCORE` | `0.25` | How well a photo must match the event to be used (CLIP similarity, about 0.3 for a good match and 0.2 for an unrelated photo). Raise it for fewer, better photos |
+| `SETH_DESIGN_EFFORT` | `low` (local), the model's default (Claude) | How hard the model thinks while designing a flyer: `none`, `low`, `medium` or `high`. A local model needs some thinking to lay a page out |
+| `SETH_DESIGN_MAX_TOKENS` | `40000` (local), `24000` (Claude) | The most the model may write, thinking included, for one design |
+| `SETH_IMAGE_PROVIDER` | `none` | Where flyer [artwork](#artwork) comes from: `none` (plain flyers) or `openai` |
+| `OPENAI_API_KEY` | (none) | The key for the image provider. `SETH_IMAGE_API_KEY` is used instead if set |
+| `SETH_IMAGE_MODEL` | `gpt-image-1` | The image model. Check the provider's current model names and prices before changing it |
+| `SETH_IMAGE_QUALITY` / `SETH_IMAGE_SIZE` | `high` / `1024x1536` | Picture quality (lower is cheaper) and size (portrait) |
+| `SETH_IMAGE_URL` | `https://api.openai.com/v1` | Address of the image server, for any server that copies OpenAI's images API |
 | `SETH_API_HOST` / `SETH_API_PORT` | `127.0.0.1` / `8765` | Where the HTTP API listens |
 
 Example:
@@ -383,6 +492,8 @@ Stop the agent and delete `data/memory.db`. The next run rebuilds the calendar f
 The school's chats contain messages from parents, students and staff, so the agent is built to keep that data close:
 
 - **Everything stays on the machine it runs on**, except the message text sent to Claude to read. With `SETH_PROVIDER=local`, nothing leaves it at all.
+- **Flyer artwork is the one other thing that leaves the machine, and only if you turn it on.** With `SETH_IMAGE_PROVIDER=openai`, a flyer's name, tagline and extra details are sent to OpenAI to paint a background. Nothing from the chats is.
+- **Flyers use the school's photos when they suit, and a flyer is meant to be shared.** Photos can come from any group, and the command lists exactly which ones (with their group), so you can check before sharing. Limit them to one group with `SETH_FLYER_PHOTO_GROUP`.
 - **Media files aren't sent.** Only text and captions are. Photos are read by a model on this machine for [photo search](#photo-search), whichever `SETH_PROVIDER` you use.
 - **The API listens only on the local machine** (`127.0.0.1`), so other devices on the network can't reach it. It has no authentication, so don't expose it more widely without adding some.
 - **The agent never changes seth-ingestion's data.** It only reads it, through the read-only `seth-feed` API.

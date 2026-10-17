@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="300" viewBox="0 0 1080 300">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><g filter="url(#wash)"><path d="M-20 320 L-20 114 Q70 44 160 118 Q250 25 340 104 Q430 36 520 119 Q610 29 700 120 Q790 55 880 119 Q970 59 1060 126 Q1150 29 1240 108 L1100 320 Z" fill="#a3c25f"/><path d="M-20 320 L-20 174 Q70 84 160 167 Q250 107 340 182 Q430 89 520 177 Q610 84 700 175 Q790 94 880 180 Q970 110 1060 167 Q1150 110 1240 187 L1100 320 Z" fill="#739e30"/><path d="M-20 320 L-20 234 Q70 146 160 232 Q250 179 340 241 Q430 175 520 225 Q610 177 700 229 Q790 178 880 246 Q970 162 1060 235 Q1150 155 1240 242 L1100 320 Z" fill="#5a8222"/></g></svg>

@@ -37,8 +37,19 @@ class Image:
 
 
 class LLM(Protocol):
-    def parse(self, system: str, prompt: str, schema: type[T], images: Sequence[Image] = ()) -> T:
-        """Answer `prompt` with an instance of `schema`. Raises TransientError or PermanentError."""
+    def parse(
+        self,
+        system: str,
+        prompt: str,
+        schema: type[T],
+        images: Sequence[Image] = (),
+        effort: str | None = None,
+        max_tokens: int | None = None,
+    ) -> T:
+        """Answer `prompt` with an instance of `schema`. Raises TransientError or PermanentError.
+
+        `effort` (none, low, medium, high) says how hard to think for this call, and `max_tokens` how much it may write
+        (thinking included); None uses the configured defaults."""
         ...
 
 
@@ -53,7 +64,15 @@ class AnthropicLLM:
         self.effort = effort
         self.client = client or anthropic.Anthropic()
 
-    def parse(self, system: str, prompt: str, schema: type[T], images: Sequence[Image] = ()) -> T:
+    def parse(
+        self,
+        system: str,
+        prompt: str,
+        schema: type[T],
+        images: Sequence[Image] = (),
+        effort: str | None = None,
+        max_tokens: int | None = None,
+    ) -> T:
         content: str | list[dict] = prompt
         if images:
             content = [
@@ -63,11 +82,11 @@ class AnthropicLLM:
         try:
             response = self.client.beta.messages.parse(
                 model=self.model,
-                max_tokens=16000,
+                max_tokens=max_tokens or 16000,
                 system=system,
                 messages=[{"role": "user", "content": content}],
                 output_format=schema,
-                output_config={"effort": self.effort},
+                output_config={"effort": {"none": "low"}.get(effort, effort) if effort else self.effort},
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
             )
@@ -114,7 +133,15 @@ class LocalLLM:
         # A local model can take minutes on a full batch, so wait much longer than a web API would.
         self.client = client or httpx.Client(base_url=base_url.rstrip("/"), headers=headers, timeout=timeout)
 
-    def parse(self, system: str, prompt: str, schema: type[T], images: Sequence[Image] = ()) -> T:
+    def parse(
+        self,
+        system: str,
+        prompt: str,
+        schema: type[T],
+        images: Sequence[Image] = (),
+        effort: str | None = None,
+        max_tokens: int | None = None,
+    ) -> T:
         json_schema = schema.model_json_schema()
         system = (
             f"{system}\n\nReply with a single JSON object that matches this JSON schema, and nothing else:\n"
@@ -130,12 +157,14 @@ class LocalLLM:
             "model": self.model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
             "temperature": 0,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens or self.max_tokens,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": schema.__name__, "schema": json_schema, "strict": True},
             },
         }
+        if effort:  # "none" turns a reasoning model's thinking off, which a long page can't afford
+            body["reasoning_effort"] = effort
         try:
             r = self.client.post("/chat/completions", json=body)
         except httpx.TransportError as e:

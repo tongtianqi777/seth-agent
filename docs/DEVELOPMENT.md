@@ -44,15 +44,16 @@ Inside seth-agent, `seth-agent run` runs one process with two threads:
 
 ```
 src/seth_agent/
-├── cli.py                 Entry point: `seth-agent run | once | calendar | photos`
+├── cli.py                 Entry point: `seth-agent run | once | calendar | photos | flyer`
 ├── config.py              Settings from SETH_* environment variables
 ├── groups.py              VolunteeringGroups: which WhatsApp groups are volunteering groups
 ├── source.py              MessageSource: read-only client for seth-ingestion's seth-feed HTTP API
 ├── agent.py               Agent: the poll loop, batching, transactions, high-water mark
 ├── llm.py                 The model behind the extractors: AnthropicLLM or LocalLLM (OpenAI-compatible server)
 ├── embeddings.py          The photo model: ClipEmbedder (local CLIP) and the Embedder interface
-├── media_search.py        Photo search: group lookup, then rank a group's photos against a text query
+├── media_search.py        Photo search: group lookup, then rank a group's photos against a text query (search_media), or pick a few that differ (pick_diverse, for flyers)
 ├── api.py                 FastAPI app: /calendar, /volunteering, /events/{id}, /media/search, /metrics, /health, and the dashboard at /
+├── flyer/                 Flyers: background.py (the art-kit scene behind every flyer), design.py (the model designs the page; tokens, checks, assembly), spec.py (the model reads a request into a FlyerSpec), art.py (artwork: scene prompt, OpenAIImages), photos.py (PhotoLibrary: library photos for a flyer), template.py (fills brand/templates/event.html), render.py (headless Chrome: draw the PNG, and check a design for text off the page, overlaps, covered photos)
 ├── dashboard/             The dashboard: one static index.html (no build step) and copies of the Seth logos (see brand/)
 ├── extractors/
 │   ├── base.py            Extractor interface, TransientError, PermanentError
@@ -70,6 +71,10 @@ tests/
 ├── test_store.py          Date spans, overlap queries, updates, cancels, history
 ├── test_agent.py          The poll loop and extractor, with Claude replaced by scripted responses
 ├── test_volunteering.py   Volunteering groups: routing, separate calendars, migration, API
+├── test_flyer.py          Flyers: wording and escaping, the brand in the page, artwork with a fake image server, the browser call with a fake Chrome
+├── test_flyer_background.py  The background scene: which scene suits an event, composing it, replacing it
+├── test_flyer_design.py   The designer: tokens, the rules a page must follow, retries, fallback, --design-file
+├── test_flyer_photos.py   Library photos on flyers: choosing, near-duplicates, group, failures, orientation
 ├── test_media.py          Photo search with a fake embedder: group filter, albums, forwards, API
 └── test_api.py            HTTP responses
 evals/

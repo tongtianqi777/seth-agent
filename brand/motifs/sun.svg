@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="560" viewBox="0 0 560 560">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><circle cx="280" cy="280" r="270" fill="url(#glow)"/><g filter="url(#wash)"><path d="M280 280 L519 354 L513 370 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L479 431 L468 445 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L415 490 L400 499 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L335 524 L318 527 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L249 528 L231 525 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L166 502 L150 494 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L97 450 L85 437 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L50 377 L43 361 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L30 292 L30 275 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L41 206 L47 190 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L81 129 L92 115 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L145 70 L160 61 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L225 36 L242 33 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L311 32 L329 35 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L394 58 L410 66 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L463 110 L475 123 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L510 183 L517 199 Z" fill="#f7cf74" opacity="0.35"/><path d="M280 280 L530 268 L530 285 Z" fill="#f7cf74" opacity="0.35"/><circle cx="280" cy="280" r="100" fill="#f1a618"/><circle cx="280" cy="280" r="60" fill="#f7cf74" opacity="0.8"/></g></svg>

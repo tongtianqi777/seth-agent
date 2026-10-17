@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="380" viewBox="0 0 520 380">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><g transform="translate(90 90) rotate(-20) scale(1.20)"><path d="M0 -50 C30 -40 40 -10 30 10 C45 15 48 40 20 38 C25 55 5 62 0 80 C-5 62 -25 55 -20 38 C-48 40 -45 15 -30 10 C-40 -10 -30 -40 0 -50 Z" fill="#f1a618"/><path d="M0 -42 V84" stroke="#002a46" stroke-width="2.5" opacity="0.4"/></g><g transform="translate(210 150) rotate(40) scale(1.00)"><path d="M0 -50 C30 -40 40 -10 30 10 C45 15 48 40 20 38 C25 55 5 62 0 80 C-5 62 -25 55 -20 38 C-48 40 -45 15 -30 10 C-40 -10 -30 -40 0 -50 Z" fill="#739e30"/><path d="M0 -42 V84" stroke="#002a46" stroke-width="2.5" opacity="0.4"/></g><g transform="translate(330 80) rotate(15) scale(1.30)"><path d="M0 -50 C30 -40 40 -10 30 10 C45 15 48 40 20 38 C25 55 5 62 0 80 C-5 62 -25 55 -20 38 C-48 40 -45 15 -30 10 C-40 -10 -30 -40 0 -50 Z" fill="#003e5d"/><path d="M0 -42 V84" stroke="#002a46" stroke-width="2.5" opacity="0.4"/></g><g transform="translate(150 250) rotate(110) scale(0.90)"><path d="M0 -50 C30 -40 40 -10 30 10 C45 15 48 40 20 38 C25 55 5 62 0 80 C-5 62 -25 55 -20 38 C-48 40 -45 15 -30 10 C-40 -10 -30 -40 0 -50 Z" fill="#5a8222"/><path d="M0 -42 V84" stroke="#002a46" stroke-width="2.5" opacity="0.4"/></g><g transform="translate(300 260) rotate(-50) scale(1.10)"><path d="M0 -50 C30 -40 40 -10 30 10 C45 15 48 40 20 38 C25 55 5 62 0 80 C-5 62 -25 55 -20 38 C-48 40 -45 15 -30 10 C-40 -10 -30 -40 0 -50 Z" fill="#f7cf74"/><path d="M0 -42 V84" stroke="#002a46" stroke-width="2.5" opacity="0.4"/></g><g transform="translate(430 190) rotate(70) scale(0.90)"><path d="M0 -50 C30 -40 40 -10 30 10 C45 15 48 40 20 38 C25 55 5 62 0 80 C-5 62 -25 55 -20 38 C-48 40 -45 15 -30 10 C-40 -10 -30 -40 0 -50 Z" fill="#f1a618"/><path d="M0 -42 V84" stroke="#002a46" stroke-width="2.5" opacity="0.4"/></g></svg>

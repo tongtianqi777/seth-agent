@@ -1,4 +1,4 @@
-"""seth-agent command line: run | once | calendar | photos."""
+"""seth-agent command line: run | once | calendar | photos | flyer."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import logging
 import threading
 from datetime import date, datetime
+from pathlib import Path
 
 from .config import Config
 
@@ -25,6 +26,26 @@ def main(argv: list[str] | None = None) -> None:
     photos.add_argument("query", help="what the photos show, e.g. 'children on a soccer field'")
     photos.add_argument("--group", help="only photos from this group (its exact name)")
     photos.add_argument("--limit", type=int, default=10)
+    flyer = sub.add_parser("flyer", help="make a flyer in the school's branding from a sentence")
+    flyer.add_argument("prompt", help="what the flyer is for, e.g. 'Open House on 11/7/2026 at 10am - 12pm'")
+    flyer.add_argument("-o", "--output", type=Path, help="where to save the PNG; default data/flyers/")
+    art = flyer.add_mutually_exclusive_group()
+    art.add_argument("--no-art", action="store_true", help="no artwork, even if an image provider is set up")
+    art.add_argument("--art-file", type=Path, help="use this picture as the background instead of generating one")
+    photos = flyer.add_mutually_exclusive_group()
+    photos.add_argument("--no-photos", action="store_true", help="no photos on this flyer")
+    photos.add_argument(
+        "--photo", dest="photo_ids", type=int, action="append", default=[], metavar="ID",
+        help="use this photo from the library (a file id; repeat for more) instead of searching",
+    )  # fmt: skip
+    flyer.add_argument("--photos", type=int, default=3, choices=range(1, 7), metavar="N", help="how many photos to look for (1-6, default 3)")
+    flyer.add_argument("--photo-group", help="take photos from this group ('all' for every group); default SETH_FLYER_PHOTO_GROUP")
+    flyer.add_argument("--layout", help="use a fixed page design from brand/templates ('event', 'event-collage') instead of letting the model design the page")
+    flyer.add_argument("--design-file", type=Path, help="use a page you designed (HTML with tokens like {{TITLE}}; see src/seth_agent/flyer/design.py)")
+    flyer.add_argument("--idea", help="steer the design, e.g. 'like a vintage poster' or 'lots of balloons'")
+    address = flyer.add_mutually_exclusive_group()
+    address.add_argument("--address", dest="address", action="store_true", default=None, help="print the school's address")
+    address.add_argument("--no-address", dest="address", action="store_false", help="leave the school's address off")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -40,6 +61,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "photos":
         _search_photos(config, args.query, args.group, args.limit)
+        return
+
+    if args.command == "flyer":
+        _make_flyer(config, args)
         return
 
     from .agent import build_agent
@@ -72,6 +97,88 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         stop.set()
         poller.join(timeout=5)
+
+
+def _make_flyer(config: Config, args: argparse.Namespace) -> None:
+    import re
+
+    from .extractors.base import PermanentError, TransientError
+    from .flyer import ArtError, FlyerError, PhotoError, make_flyer
+    from .flyer.design import DesignError
+    from .flyer.art import build_image_gen
+    from .flyer.template import available_layouts, format_date, format_times
+    from .llm import build_llm
+
+    prompt, output, art_file = args.prompt, args.output, args.art_file
+    if args.layout and args.layout not in available_layouts(config.brand_dir):
+        raise SystemExit(f"no layout {args.layout!r}; choose one of: {', '.join(available_layouts(config.brand_dir))}")
+    today = datetime.now(config.tz).date()
+    if output is None:
+        slug = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "flyer"
+        output = config.flyer_dir / f"{today.isoformat()}-{slug}.png"
+    try:
+        image_gen = None if args.no_art or art_file else build_image_gen(config)
+        library = None if args.no_photos else _photo_library(config, args.photo_group, searching=not args.photo_ids)
+        flyer = make_flyer(
+            build_llm(config), prompt, output, config.brand_dir, today, config.chrome, image_gen, art_file,
+            args.address, library, args.photos, args.photo_ids, args.layout, args.idea, None, config.design_effort, args.design_file, config.design_max_tokens,
+        )  # fmt: skip
+    except ArtError as e:
+        raise SystemExit(f"artwork: {e}")
+    except PhotoError as e:
+        raise SystemExit(f"photos: {e}")
+    except DesignError as e:
+        raise SystemExit(f"the design breaks the rules: {e}")
+    except OSError as e:
+        raise SystemExit(f"couldn't read or write a file: {e}")
+    except TransientError as e:
+        raise SystemExit(f"couldn't reach the model, try again: {e}")
+    except (PermanentError, FlyerError) as e:
+        raise SystemExit(f"couldn't make the flyer: {e}")
+    # Say what was understood, so a misread date or time is caught before the flyer is shared.
+    spec = flyer.spec
+    read = [spec.title, spec.subtitle, spec.event_date and format_date(spec.event_date)]
+    read += [format_times(spec.start_time, spec.end_time), spec.location, spec.at_school and "school address", spec.details]
+    print("Read from your request: " + " | ".join(x for x in read if x))
+    if flyer.photo_error:
+        print(f"No photos this time ({flyer.photo_error}).")
+    elif not flyer.photos and not args.no_photos:
+        print("No photos: none suit this flyer (or nothing in the library matches well enough).")
+    for p in flyer.photos:
+        how = f"score {p.score:.2f}" if p.score is not None else "chosen by you"
+        print(f"Photo #{p.file_id}: {p.group}, {p.sent_at[:10]} ({how})")
+    if flyer.photos and not args.photo_ids:
+        print("  Don't like one? Swap one with --photo ID (find ids in the dashboard's Media tab), or use --no-photos.")
+    if flyer.design_error:
+        print(f"The model's design wasn't used ({flyer.design_error}); the standard layout took its place.")
+    elif flyer.design == "hand-made":
+        print("Used your design file.")
+    elif flyer.design == "creative":
+        print("Designed from scratch. Looks it was pointed at: " + " / ".join(i.split(":")[0] for i in flyer.ideas))
+    if flyer.art_error:
+        print(f"No artwork this time ({flyer.art_error}). The flyer is plain; try again for artwork.")
+    elif flyer.art_path and not art_file:
+        print(f"Artwork: {flyer.art_path}  (reuse it with --art-file)")
+    print(flyer.path)
+
+
+def _photo_library(config: Config, group: str | None, searching: bool):
+    from .embeddings import build_embedder
+    from .flyer import PhotoLibrary
+    from .memory.store import MemoryStore
+    from .source import MessageSource
+
+    if group is None:
+        group = config.flyer_photo_group
+    elif group.casefold() == "all":
+        group = None
+    return PhotoLibrary(
+        MemoryStore(config.memory_db),
+        MessageSource(config.feed_url),
+        build_embedder(config) if searching else None,
+        group,
+        config.flyer_photo_min_score,
+    )
 
 
 def _search_photos(config: Config, query: str, group: str | None, limit: int) -> None:
