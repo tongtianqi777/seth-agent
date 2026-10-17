@@ -8,7 +8,7 @@ The source of truth is [src/seth_agent/memory/schema.sql](../src/seth_agent/memo
 
 | Store | Location | Owner | Contents |
 |---|---|---|---|
-| Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the school calendar and the volunteering calendars, plus the agent's own bookkeeping. Other memories (latest updates, media) will be added here |
+| Memory database | `data/memory.db` (`SETH_MEMORY_DB`) | seth-agent | the school calendar and the volunteering calendars, the index of the school's photos, plus the agent's own bookkeeping. Other memories (latest updates) will be added here |
 | Message feed | `seth-feed` API (`SETH_FEED_URL`) | seth-ingestion | the raw messages from the school's WhatsApp groups. seth-agent **only reads** them. See seth-ingestion's [CONSUMING.md](../../seth-ingestion/docs/CONSUMING.md) |
 
 The memory database is SQLite in WAL mode. The agent creates it on first run and brings the schema up to date on every start. You can read it with `sqlite3` while the agent is running.
@@ -140,6 +140,29 @@ An audit trail with one row per change.
 | `reason` | TEXT | yes | Claude's explanation of why the messages led to this change |
 | `at` | TEXT | no | When the change was made |
 
+## Media tables
+
+### `media_files`
+
+One row per photo the agent has indexed for photo search. The photo itself stays in seth-ingestion's media folder; this holds where it came from and a vector that describes what it shows.
+
+| Column | Type | Null? | Description |
+|---|---|---|---|
+| `file_id` | INTEGER | no | seth-feed's file id (`files[].id`). **Primary key**, and what `GET /media/{id}` serves |
+| `chat_jid` | TEXT | no | The group the photo was sent in. Searches with a `group` filter on this |
+| `message_id` | TEXT | no | The message it came with. An album's photos share one |
+| `group_name` | TEXT | no | The group's name when the photo was indexed, for display. A later rename doesn't change it |
+| `sender` | TEXT | no | Who sent it |
+| `sent_at` | TEXT | no | When it was sent, RFC3339 UTC |
+| `mime` | TEXT | no | e.g. `image/jpeg` |
+| `caption` | TEXT | yes | The file's caption, else the message's text |
+| `sha256` | TEXT | no | The file's content hash. A photo forwarded to another group has the same one, and reuses the embedding instead of making another |
+| `model` | TEXT | no | The model that made `embedding` (`SETH_MEDIA_MODEL`). Only rows made by the model in use are searched |
+| `embedding` | BLOB | no | The photo's vector: little-endian float32 values of unit length |
+| `indexed_at` | TEXT | no | When it was indexed |
+
+Videos, voice notes, documents and stickers aren't indexed, and neither are photos whose download failed in seth-ingestion.
+
 ## Bookkeeping tables
 
 ### `processed_messages`
@@ -151,7 +174,7 @@ The messages each extractor has handled. This table is how the agent avoids read
 | `extractor` | TEXT | no | The extractor's name, e.g. `calendar`. **Primary key** with the next two columns |
 | `chat_jid` | TEXT | no | |
 | `message_id` | TEXT | no | |
-| `body_hash` | TEXT | no | The first 16 hex digits of the SHA-256 of the message body when it was handled |
+| `body_hash` | TEXT | no | The first 16 hex digits of the SHA-256 of the message body when it was handled. For the `media` extractor it is the hash of the message's photo ids instead, so an album that gains photos is handled again |
 | `outcome` | TEXT | no | `skipped` (filtered out without calling Claude), `extracted` (Claude read it) or `failed` (given up on) |
 | `processed_at` | TEXT | no | When this happened |
 
@@ -244,6 +267,7 @@ SELECT at, error, message_ids FROM extraction_errors ORDER BY id DESC LIMIT 10;
 | Rebuild everything from scratch | Delete `data/memory.db` (and `-wal`/`-shm` if present) |
 | Read a volunteering group's earlier messages onto its calendar. Needed once, if the group was a school group before it became a volunteering group | `DELETE FROM agent_state WHERE key = 'source.cursor';`. Only the volunteering extractor has unread messages there, so the school calendar is untouched. Events the group already put on the school calendar stay there, so cancel those by hand if you don't want them |
 | Re-read every message for the calendar, keeping nothing | `DELETE FROM event_history; DELETE FROM event_sources; DELETE FROM events; DELETE FROM processed_messages WHERE extractor IN ('calendar', 'volunteering'); DELETE FROM agent_state WHERE key = 'source.cursor';` (the `sqlite3` shell doesn't enforce foreign keys, so the child tables have to be cleared explicitly) |
+| Index the photos that were sent before photo search was installed. Needed once on an existing database (a new database does this on its own) | `DELETE FROM agent_state WHERE key = 'source.cursor';`. Only the `media` extractor has unread messages there, so the calendars are untouched. To redo photos with a different `SETH_MEDIA_MODEL`, also `DELETE FROM media_files; DELETE FROM processed_messages WHERE extractor = 'media';` |
 | Retry batches that failed | `DELETE FROM processed_messages WHERE outcome = 'failed'; DELETE FROM agent_state WHERE key = 'source.cursor';` |
 
 Clearing `source.cursor` makes the next poll read the whole message history from seth-feed again. Only messages without a matching `processed_messages` row are sent to Claude, so the extra cost is a local read.

@@ -1,4 +1,4 @@
-"""seth-agent command line: run | once | calendar."""
+"""seth-agent command line: run | once | calendar | photos."""
 
 from __future__ import annotations
 
@@ -21,6 +21,10 @@ def main(argv: list[str] | None = None) -> None:
     cal.add_argument("--to", dest="date_to", type=date.fromisoformat)
     cal.add_argument("--all", action="store_true", help="include cancelled events")
     cal.add_argument("--group", help="print this volunteering group's calendar instead of the school calendar")
+    photos = sub.add_parser("photos", help="find photos by describing them")
+    photos.add_argument("query", help="what the photos show, e.g. 'children on a soccer field'")
+    photos.add_argument("--group", help="only photos from this group (its exact name)")
+    photos.add_argument("--limit", type=int, default=10)
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -32,6 +36,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "calendar":
         _print_calendar(config, args.date_from, args.date_to, args.all, args.group)
+        return
+
+    if args.command == "photos":
+        _search_photos(config, args.query, args.group, args.limit)
         return
 
     from .agent import build_agent
@@ -56,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
     poller.start()
     try:
         uvicorn.run(
-            create_app(agent.store, agent.source, config.tz, config.volunteering),
+            create_app(agent.store, agent.source, config.tz, config.volunteering, agent.embedder),
             host=config.api_host,
             port=config.api_port,
             access_log=args.verbose,  # per-request dashboard lines are noise unless -v
@@ -64,6 +72,27 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         stop.set()
         poller.join(timeout=5)
+
+
+def _search_photos(config: Config, query: str, group: str | None, limit: int) -> None:
+    from .embeddings import build_embedder
+    from .media_search import GroupNotFound, search_media
+    from .memory.store import MemoryStore
+    from .source import MessageSource, SourceError
+
+    embedder = build_embedder(config)
+    if embedder is None:
+        raise SystemExit("photo search is off: install it with `pip install -e '.[media]'` (and leave SETH_MEDIA_INDEX on)")
+    try:
+        found = search_media(MemoryStore(config.memory_db), MessageSource(config.feed_url), embedder, query, group, limit)
+    except (GroupNotFound, SourceError) as e:
+        raise SystemExit(str(e))
+    if not found["results"]:
+        print(f"(no photos; {found['searched']} searched)")
+        return
+    for r in found["results"]:
+        print(f"{r['score']:.3f}  #{r['file_id']}  {r['sent_at']}  {r['group']}  {r['caption'] or ''}".rstrip())
+        print(f"       {config.feed_url.rstrip('/')}/media/{r['file_id']}")
 
 
 def _print_calendar(

@@ -44,18 +44,21 @@ Inside seth-agent, `seth-agent run` runs one process with two threads:
 
 ```
 src/seth_agent/
-├── cli.py                 Entry point: `seth-agent run | once | calendar`
+├── cli.py                 Entry point: `seth-agent run | once | calendar | photos`
 ├── config.py              Settings from SETH_* environment variables
 ├── groups.py              VolunteeringGroups: which WhatsApp groups are volunteering groups
 ├── source.py              MessageSource: read-only client for seth-ingestion's seth-feed HTTP API
 ├── agent.py               Agent: the poll loop, batching, transactions, high-water mark
 ├── llm.py                 The model behind the extractors: AnthropicLLM or LocalLLM (OpenAI-compatible server)
-├── api.py                 FastAPI app: /calendar, /volunteering, /events/{id}, /health, and the dashboard at /
+├── embeddings.py          The photo model: ClipEmbedder (local CLIP) and the Embedder interface
+├── media_search.py        Photo search: group lookup, then rank a group's photos against a text query
+├── api.py                 FastAPI app: /calendar, /volunteering, /events/{id}, /media/search, /metrics, /health, and the dashboard at /
 ├── dashboard/             The dashboard: one static index.html (no build step) and the Seth logos
 ├── extractors/
 │   ├── base.py            Extractor interface, TransientError, PermanentError
 │   ├── calendar.py        CalendarExtractor: the school calendar. Prompt, applying operations
-│   └── volunteering.py    VolunteeringExtractor: the same, for volunteering groups, with its own prompt
+│   ├── volunteering.py    VolunteeringExtractor: the same, for volunteering groups, with its own prompt
+│   └── media.py           MediaExtractor: downloads each photo and stores its embedding. No LLM call
 └── memory/
     ├── schema.sql         Memory database schema (idempotent)
     └── store.py           MemoryStore: all reads and writes to memory.db
@@ -67,6 +70,7 @@ tests/
 ├── test_store.py          Date spans, overlap queries, updates, cancels, history
 ├── test_agent.py          The poll loop and extractor, with Claude replaced by scripted responses
 ├── test_volunteering.py   Volunteering groups: routing, separate calendars, migration, API
+├── test_media.py          Photo search with a fake embedder: group filter, albums, forwards, API
 └── test_api.py            HTTP responses
 evals/
 ├── calendar_examples.py     Live check against Claude using the examples from the spec
@@ -336,7 +340,7 @@ What you get for free:
 
 - **Backfill.** `processed_messages` is tracked per extractor, so the new extractor sees every past message as unprocessed and works through the history on its first run. The calendar isn't affected.
 - **Independence.** Each extractor has its own filtering, batching, transactions and error handling. A failure in one doesn't stop the others in the same poll.
-- **Media.** Photo-based extractors can read files from seth-ingestion's `message_media_files` table and media folder. Add a query for them to `MessageSource`, and have `wants()` accept messages with `media_file_count > 0`.
+- **Media.** Messages carry their `files` (see `MediaFile` in `source.py`), and `MessageSource.fetch_media` downloads one. See [Photo search](#photo-search) for an extractor that uses them.
 
 ## Volunteering calendars
 
@@ -356,6 +360,25 @@ Messages from a volunteering group go to a different extractor than every other 
 Each on-duty statement becomes one event per session, titled with the volunteer ("P.E. volunteer: Sarah"), and a correction ("it's actually Tom") updates it. `evals/volunteering_examples.py` checks this live against Claude.
 
 The extractors are named `calendar` and `volunteering` in `processed_messages`, so each tracks its own progress. To add another volunteering group, add its name (and usual routine) to `SETH_VOLUNTEERING_GROUPS`. It gets its own calendar, tab picker entry and API name with no code changes.
+
+## Photo search
+
+[extractors/media.py](../src/seth_agent/extractors/media.py) indexes photos, and [media_search.py](../src/seth_agent/media_search.py) answers searches. There is no language model in either, and nothing leaves the machine.
+
+**Indexing.** `MediaExtractor.wants` takes messages with at least one downloadable image (`media_type == "image"`; videos, voice notes, documents and stickers are left out). `extract` downloads each new photo with `GET /media/{id}` and asks an `Embedder` ([embeddings.py](../src/seth_agent/embeddings.py)) for its vector. `ClipEmbedder` runs a CLIP model with `torch` and `transformers` (Apple GPU if there is one, else CUDA or CPU) and loads it the first time it is used. `apply` writes a row per photo to `media_files`. Details that matter:
+
+- **Albums.** An album reaches the agent photo by photo, as the same message with more files each time and an unchanged caption. The usual "body changed" check would skip every photo after the first, so `Extractor.fingerprint` lets an extractor decide what counts as changed. The media extractor's is the hash of the message's photo ids. `extract` also skips files already in `media_files`, and a batch can contain the same message twice, so it drops repeats.
+- **Forwards.** The same photo sent to two groups has the same `sha256`. It is embedded once and gets a row for each group, so a search limited to either group finds it.
+- **Failures.** A photo that seth-feed no longer has, or that can't be opened as a picture, is skipped and logged. An unreachable seth-feed or a model that can't be downloaded is a `TransientError`; any other embedding failure is a `PermanentError`, so one bad batch doesn't hold up the calendars.
+- **Off unless installed.** `build_embedder` returns `None` when the `media` extra isn't installed or `SETH_MEDIA_INDEX=0`, and the extractor isn't registered. The extra's libraries are only imported when the model is first used.
+
+**Searching.** `POST /media/search` takes `{query, group, limit, min_score}`. The client names the group; nothing parses it out of the sentence. `resolve_group` looks it up in seth-feed's `GET /groups` by exact name (ignoring case and spaces), media folder or JID, because "Preschool" and "Preschool P.E. Teachers" both exist and a guess would return the wrong children's photos. The group becomes a filter on `media_files.chat_jid`. The query is embedded as text and ranked against the stored vectors by dot product (both are unit length, so that is cosine similarity), in plain Python. That ranks tens of thousands of photos in well under a second; use a vector index if the library grows far beyond that.
+
+`media_files.model` records which model made each vector. Search only compares vectors made by the current `SETH_MEDIA_MODEL`, so changing the model needs a re-index (see [Resetting](MEMORY.md#resetting)).
+
+**Backfill.** Like any new extractor, `media` has no `processed_messages` rows, so on a new database it indexes the whole history. On an existing database the poll cursor is already past that history, so clear `source.cursor` once to index it.
+
+**Testing.** [tests/test_media.py](../tests/test_media.py) uses a `FakeEmbedder` whose "photos" are bytes of words, so the whole path (feed, extractor, store, search, API) runs in a second with no model. The fake feed serves `/groups` and `/media/{id}`. The real `ClipEmbedder` is only exercised by running the agent against real photos.
 
 ## Design decisions
 
@@ -380,4 +403,5 @@ A calendar you can't audit is hard to trust. With cancellations kept and every c
 - **US date format.** `10/12` is read as October 12. Change the rule in `SYSTEM_PROMPT` if your community writes day/month.
 - **Recurring events** ("every Tuesday") are stored at most as a single occurrence or range. There's no recurrence model yet.
 - **Past events stay** in the database, which is fine because queries filter by date. The prompt only shows Claude events from 7 days before the batch onward, so very old events don't clutter it.
+- **Photo search finds what a photo looks like, not what it is about.** It can't read text in a photo, tell one child from another or count people, and a vague query still returns the best photos it has. Only photos are indexed, not videos.
 - **No API authentication.** The API is safe while it's bound to `127.0.0.1`. Add authentication before binding it to any other interface.

@@ -76,3 +76,27 @@ CREATE TABLE IF NOT EXISTS event_history (
     reason      TEXT,
     at          TEXT NOT NULL
 );
+
+-- ---------------------------------------------------------------------------
+-- Media memory
+-- ---------------------------------------------------------------------------
+
+-- One row per indexed photo. `embedding` is the photo's image embedding (little-endian float32, L2-normalised),
+-- made by `model`. Searching compares a query's text embedding with these, so only rows made by the model
+-- in use are searched. Rows made by another model stay until they are re-indexed.
+CREATE TABLE IF NOT EXISTS media_files (
+    file_id    INTEGER PRIMARY KEY,       -- seth-feed's file id
+    chat_jid   TEXT NOT NULL,             -- the group the photo was sent in (searches filter on this)
+    message_id TEXT NOT NULL,
+    group_name TEXT NOT NULL,             -- the group's name when the photo was indexed, for display
+    sender     TEXT NOT NULL,
+    sent_at    TEXT NOT NULL,
+    mime       TEXT NOT NULL,
+    caption    TEXT,
+    sha256     TEXT NOT NULL,
+    model      TEXT NOT NULL,
+    embedding  BLOB NOT NULL,
+    indexed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_media_chat ON media_files (model, chat_jid);
+CREATE INDEX IF NOT EXISTS idx_media_sha ON media_files (sha256, model);

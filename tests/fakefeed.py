@@ -19,6 +19,7 @@ class FakeFeed:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
         self.log: list[tuple[int, bool]] = []  # (seq, updated) in the order the feed announced them
+        self.media: dict[int, bytes] = {}  # file id -> bytes served at /media/{id}
         self.down = False
         self.requests: list[str] = []
         self.client = httpx.Client(transport=httpx.MockTransport(self._handle), base_url="http://feed")
@@ -49,6 +50,28 @@ class FakeFeed:
         })
         self.log.append((len(self.rows), False))
 
+    def add_file(
+        self,
+        message_id: str,
+        file_id: int,
+        data: bytes | None,
+        sha256: str | None = None,
+        media_type: str = "image",
+        mime: str = "image/jpeg",
+        chat_jid: str = CHAT,
+    ) -> None:
+        """A file arriving for a message: the message is announced again (updated=true), as for an album.
+        `data=None` is a download that failed: the file is listed with no url."""
+        row = self._row(chat_jid, message_id)
+        if data is not None:
+            self.media[file_id] = data
+        row["files"].append({
+            "id": file_id, "position": len(row["files"]), "media_type": media_type, "caption": None,
+            "mime": mime, "sha256": sha256 or f"sha-{file_id}", "url": f"/media/{file_id}" if data is not None else None,
+        })
+        row["media_file_count"] = len(row["files"])
+        self.log.append((row["seq"], True))
+
     def set_body(self, message_id: str, body: str) -> None:
         """An album's caption arriving later: the feed sends the message again with updated=true."""
         row = self._row(CHAT, message_id)
@@ -77,6 +100,17 @@ class FakeFeed:
         path, q = request.url.path, dict(request.url.params)
         if path == "/health":
             return httpx.Response(200, json={"status": "ok", "cursor": str(len(self.log))})
+        if path == "/groups":
+            names = {r["chat_jid"]: r["group"] for r in self.rows}
+            return httpx.Response(200, json={"groups": [
+                {"group_jid": jid, "name": name, "media_folder": name.lower().replace(" ", "-")}
+                for jid, name in names.items()
+            ]})
+        if path.startswith("/media/"):
+            data = self.media.get(int(path.rsplit("/", 1)[1]))
+            if data is None:
+                return httpx.Response(404, json={"error": "file not found"})
+            return httpx.Response(200, content=data)
         if path == "/messages/new":
             start, limit = int(q.get("since", 0)), int(q.get("limit", 100))
             entries = self.log[start : start + limit]

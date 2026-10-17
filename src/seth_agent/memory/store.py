@@ -5,7 +5,8 @@ from __future__ import annotations
 import calendar
 import json
 import sqlite3
-from collections.abc import Iterable, Iterator
+from array import array
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from importlib import resources
@@ -38,6 +39,14 @@ def normalize_span(precision: str, start: date, end: date | None) -> tuple[date,
         return date(start.year, 1, 1), date(start.year, 12, 31)
     end = end or start
     return (start, end) if end >= start else (end, start)
+
+
+def _body_hash(m: Message) -> str:
+    return m.body_hash
+
+
+def pack_vector(vector: Sequence[float]) -> bytes:
+    return array("f", vector).tobytes()
 
 
 def event_label(event: dict[str, Any]) -> str:
@@ -113,8 +122,10 @@ class MemoryStore:
         with self.transaction() as c:
             c.execute(sql, (key, value))
 
-    def unprocessed(self, extractor: str, messages: Iterable[Message]) -> list[Message]:
-        """The messages this extractor hasn't handled yet, or whose body changed since."""
+    def unprocessed(
+        self, extractor: str, messages: Iterable[Message], fingerprint: Callable[[Message], str] = _body_hash
+    ) -> list[Message]:
+        """The messages this extractor hasn't handled yet, or whose fingerprint (by default the body) changed since."""
         with self.transaction() as conn:
             seen = {
                 (r["chat_jid"], r["message_id"]): r["body_hash"]
@@ -123,17 +134,22 @@ class MemoryStore:
                     (extractor,),
                 )
             }
-        return [m for m in messages if seen.get(m.key) != m.body_hash]
+        return [m for m in messages if seen.get(m.key) != fingerprint(m)]
 
     def mark_processed(
-        self, conn: sqlite3.Connection, extractor: str, messages: Iterable[Message], outcome: str
+        self,
+        conn: sqlite3.Connection,
+        extractor: str,
+        messages: Iterable[Message],
+        outcome: str,
+        fingerprint: Callable[[Message], str] = _body_hash,
     ) -> None:
         conn.executemany(
             """INSERT INTO processed_messages (extractor, chat_jid, message_id, body_hash, outcome, processed_at)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT (extractor, chat_jid, message_id) DO UPDATE SET
                    body_hash = excluded.body_hash, outcome = excluded.outcome, processed_at = excluded.processed_at""",
-            [(extractor, m.chat_jid, m.message_id, m.body_hash, outcome, now_ts()) for m in messages],
+            [(extractor, m.chat_jid, m.message_id, fingerprint(m), outcome, now_ts()) for m in messages],
         )
 
     def record_error(
@@ -329,6 +345,103 @@ class MemoryStore:
                     (e["id"],),
                 )
             ]
+
+    # -- media ---------------------------------------------------------------------
+
+    def indexed_media_ids(self, file_ids: Iterable[int]) -> set[int]:
+        """Which of these seth-feed file ids are already indexed."""
+        ids = list(file_ids)
+        if not ids:
+            return set()
+        with self.transaction() as conn:
+            rows = conn.execute(
+                f"SELECT file_id FROM media_files WHERE file_id IN ({','.join('?' * len(ids))})", ids
+            )
+            return {r["file_id"] for r in rows}
+
+    def embedding_for_sha(self, sha256: str, model: str) -> bytes | None:
+        """The embedding of a photo with this content that was already made by `model` (e.g. for a forward)."""
+        with self.transaction() as conn:
+            row = conn.execute(
+                "SELECT embedding FROM media_files WHERE sha256 = ? AND model = ? LIMIT 1", (sha256, model)
+            ).fetchone()
+        return row["embedding"] if row else None
+
+    def add_media(self, conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> int:
+        """Records indexed photos (dicts with the media_files columns). Returns how many were new."""
+        added = 0
+        for r in rows:
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO media_files
+                   (file_id, chat_jid, message_id, group_name, sender, sent_at, mime, caption, sha256,
+                    model, embedding, indexed_at)
+                   VALUES (:file_id, :chat_jid, :message_id, :group_name, :sender, :sent_at, :mime, :caption,
+                           :sha256, :model, :embedding, :indexed_at)""",
+                {**r, "indexed_at": now_ts()},
+            )
+            added += cur.rowcount
+        return added
+
+    def media_for_search(self, model: str, chat_jid: str | None = None) -> list[dict[str, Any]]:
+        """Indexed photos made by `model`, with their embeddings, optionally only those from one group."""
+        sql = "SELECT * FROM media_files WHERE model = ?"
+        params: list[Any] = [model]
+        if chat_jid is not None:
+            sql += " AND chat_jid = ?"
+            params.append(chat_jid)
+        with self.transaction() as conn:
+            return [dict(r) for r in conn.execute(sql, params)]
+
+    def get_media(self, file_id: int) -> dict[str, Any] | None:
+        with self.transaction() as conn:
+            row = conn.execute(
+                "SELECT file_id, chat_jid, message_id, group_name, sender, sent_at, mime, caption "
+                "FROM media_files WHERE file_id = ?",
+                (file_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def metrics(self) -> dict[str, Any]:
+        """Counts for the dashboard's Status tab: what each extractor has handled, the events, and the photo index."""
+        with self.transaction() as conn:
+            extractors: dict[str, dict[str, int]] = {}
+            for r in conn.execute("SELECT extractor, outcome, COUNT(*) AS n FROM processed_messages GROUP BY 1, 2"):
+                extractors.setdefault(r["extractor"], {})[r["outcome"]] = r["n"]
+            events: dict[str, dict[str, int]] = {}
+            for r in conn.execute("SELECT category, status, COUNT(*) AS n FROM events GROUP BY 1, 2"):
+                events.setdefault(r["category"], {})[r["status"]] = r["n"]
+            failed_batches = conn.execute("SELECT COUNT(*) AS n FROM extraction_errors").fetchone()["n"]
+            photos = dict(
+                conn.execute(
+                    """SELECT COUNT(*) AS indexed, COUNT(DISTINCT sha256) AS unique_images,
+                              COALESCE(SUM(LENGTH(embedding)), 0) AS embedding_bytes,
+                              MIN(sent_at) AS oldest_sent_at, MAX(sent_at) AS newest_sent_at,
+                              MAX(indexed_at) AS last_indexed_at
+                       FROM media_files"""
+                ).fetchone()
+            )
+            photos["by_model"] = [
+                {"model": r["model"], "photos": r["n"], "dimensions": r["bytes"] // 4}
+                for r in conn.execute(
+                    "SELECT model, COUNT(*) AS n, MAX(LENGTH(embedding)) AS bytes FROM media_files GROUP BY model ORDER BY n DESC"
+                )
+            ]
+            photos["by_group"] = [
+                {"group": r["name"], "photos": r["n"]}
+                for r in conn.execute(
+                    "SELECT MAX(group_name) AS name, COUNT(*) AS n FROM media_files GROUP BY chat_jid ORDER BY n DESC, name"
+                )
+            ]
+        return {
+            "extractors": extractors,
+            "events": events,
+            "failed_batches": failed_batches,
+            "photos": photos,
+        }
+
+    def count_media(self) -> int:
+        with self.transaction() as conn:
+            return conn.execute("SELECT COUNT(*) AS n FROM media_files").fetchone()["n"]
 
 
 def _normalize_fields(fields: dict[str, Any]) -> dict[str, Any]:
