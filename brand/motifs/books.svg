@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="360" viewBox="0 0 400 360">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><g filter="url(#wash)"><rect x="60" y="274" width="300" height="56" rx="6" fill="#002a46"/><rect x="346" y="280" width="8" height="44" fill="#f0e9e0"/><rect x="70" y="296" width="105" height="8" rx="4" fill="#f0e9e0" opacity="0.8"/><rect x="74" y="212" width="270" height="56" rx="6" fill="#739e30"/><rect x="330" y="218" width="8" height="44" fill="#f0e9e0"/><rect x="84" y="234" width="94" height="8" rx="4" fill="#f0e9e0" opacity="0.8"/><rect x="52" y="150" width="240" height="56" rx="6" fill="#f1a618"/><rect x="278" y="156" width="8" height="44" fill="#f0e9e0"/><rect x="62" y="172" width="84" height="8" rx="4" fill="#f0e9e0" opacity="0.8"/><circle cx="170" cy="112" r="40" fill="#c8402e" opacity="0"/><circle cx="170" cy="108" r="42" fill="#739e30"/><circle cx="156" cy="96" r="10" fill="#fff" opacity="0.35"/><path d="M170 68 q4 -22 22 -28" stroke="#003e5d" stroke-width="6" fill="none" stroke-linecap="round"/><path d="M180 56 q22 -16 38 0 q-18 18 -38 0 Z" fill="#5a8222"/></g></svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="190" viewBox="0 0 300 190">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><g transform="translate(80 100) rotate(-15) scale(1.0)" filter="url(#wash)"><path d="M0 0 C-30 -40 -60 -20 -42 10 C-30 30 -8 18 0 6 Z M0 0 C30 -40 60 -20 42 10 C30 30 8 18 0 6 Z" fill="#f1a618"/><rect x="-2" y="-14" width="4" height="34" rx="2" fill="#002a46"/><path d="M0 -14 q-8 -14 -16 -16 M0 -14 q8 -14 16 -16" stroke="#002a46" stroke-width="2" fill="none"/></g><g transform="translate(210 70) rotate(12) scale(0.7)" filter="url(#wash)"><path d="M0 0 C-30 -40 -60 -20 -42 10 C-30 30 -8 18 0 6 Z M0 0 C30 -40 60 -20 42 10 C30 30 8 18 0 6 Z" fill="#a3c25f"/><rect x="-2" y="-14" width="4" height="34" rx="2" fill="#002a46"/><path d="M0 -14 q-8 -14 -16 -16 M0 -14 q8 -14 16 -16" stroke="#002a46" stroke-width="2" fill="none"/></g><g transform="translate(190 150) rotate(5) scale(0.5)" filter="url(#wash)"><path d="M0 0 C-30 -40 -60 -20 -42 10 C-30 30 -8 18 0 6 Z M0 0 C30 -40 60 -20 42 10 C30 30 8 18 0 6 Z" fill="#f7cf74"/><rect x="-2" y="-14" width="4" height="34" rx="2" fill="#002a46"/><path d="M0 -14 q-8 -14 -16 -16 M0 -14 q8 -14 16 -16" stroke="#002a46" stroke-width="2" fill="none"/></g></svg>

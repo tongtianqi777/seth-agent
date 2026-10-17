@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="520" viewBox="0 0 520 520">
+<defs>
+  <filter id="wobble" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="9"/>
+  </filter>
+  <filter id="paper" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.16 0"/>
+  </filter>
+  <filter id="wash" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.8"/>
+  </filter>
+  <radialGradient id="sky" cx="50%" cy="48%" r="75%"><stop offset="0" stop-color="#f7f4ee"/><stop offset="1" stop-color="#f0e9e0"/></radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f7cf74" stop-opacity="0.9"/><stop offset="1" stop-color="#f7cf74" stop-opacity="0"/></radialGradient>
+</defs><path d="M120 74 Q128.28 111.72 166 120 Q128.28 128.28 120 166 Q111.72 128.28 74 120 Q111.72 111.72 120 74 Z" fill="#f1a618"/><path d="M390 60 Q395.4 84.6 420 90 Q395.4 95.4 390 120 Q384.6 95.4 360 90 Q384.6 84.6 390 60 Z" fill="#739e30"/><path d="M300 200 Q310.8 249.2 360 260 Q310.8 270.8 300 320 Q289.2 270.8 240 260 Q289.2 249.2 300 200 Z" fill="#f7cf74"/><path d="M90 326 Q96.12 353.88 124 360 Q96.12 366.12 90 394 Q83.88 366.12 56 360 Q83.88 353.88 90 326 Z" fill="#003e5d"/><path d="M430 356 Q437.92 392.08 474 400 Q437.92 407.92 430 444 Q422.08 407.92 386 400 Q422.08 392.08 430 356 Z" fill="#f1a618"/><path d="M210 426 Q214.32 445.68 234 450 Q214.32 454.32 210 474 Q205.68 454.32 186 450 Q205.68 445.68 210 426 Z" fill="#a3c25f"/><path d="M470 198 Q473.96 216.04 492 220 Q473.96 223.96 470 242 Q466.04 223.96 448 220 Q466.04 216.04 470 198 Z" fill="#003e5d"/></svg>

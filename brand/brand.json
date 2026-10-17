@@ -35,6 +35,119 @@
     "files": [],
     "note": "System fonts only for now. Put any font files in fonts/ and list them in 'files' if a flyer needs a fixed typeface."
   },
+  "slogan": {
+    "text": "Christ-centered education • Unity among family, school, & church • Building Christian character",
+    "parts": ["Christ-centered education", "Unity among family, school, & church", "Building Christian character"],
+    "use": "Include on every design: flyers, newsletters, anything the school sends out. Small and quiet, near the bottom, in navy or cream, never altered or shortened."
+  },
+  "address": {
+    "text": "1395 Hollenbeck Ave, Sunnyvale, CA 94087",
+    "use": "Print on any design for an event people attend at the school. Leave it off when the event is held somewhere else or nobody needs to come."
+  },
   "stripe": "Navy, green and gold in equal thirds, as in the dashboard header. A good footer or divider for flyers.",
-  "templates_dir": "templates"
+  "templates_dir": "templates",
+  "art": {
+    "style": "Warm, hand-painted flat illustration with soft watercolor texture, friendly and wholesome, in the spirit of a modern children's picture book. Simple shapes, gentle shading, no photorealism.",
+    "palette": "Only the school's colors: navy, green, gold and cream, plus tints of them. No other hues.",
+    "composition": "Decorative artwork that frames the page: the interest sits along the edges, corners and bottom. The middle of the page and the top where the logo goes are calm, open, light cream space.",
+    "avoid": "Any text, letters, numbers, logos, signs or banners with writing. Faces and recognizable people (use silhouettes, hands or objects instead). Crosses and religious symbols other than what the request names. Dark or busy backgrounds."
+  },
+  "motifs": {
+    "bunting": {
+      "file": "motifs/bunting.svg",
+      "width": 760,
+      "height": 200,
+      "use": "A swag of triangle flags in navy, green and gold, hanging between two corners. Flip it with transform: scaleX(-1) for the other corner. Wide: about 3.8:1."
+    },
+    "balloons": {
+      "file": "motifs/balloons.svg",
+      "width": 230,
+      "height": 500,
+      "use": "Three balloons (gold, green, blue) on strings. Tall: about 1:2.2."
+    },
+    "sun": {
+      "file": "motifs/sun.svg",
+      "width": 560,
+      "height": 560,
+      "use": "A friendly sun with soft rays. Square. Works partly off the page in a corner."
+    },
+    "hills": {
+      "file": "motifs/hills.svg",
+      "width": 1080,
+      "height": 300,
+      "use": "Three layers of rolling green hills, filling the bottom. Full page width: 3.6:1. Put it at the bottom edge of the page."
+    },
+    "tree": {
+      "file": "motifs/tree.svg",
+      "width": 560,
+      "height": 620,
+      "use": "A big oak-like tree with a round green canopy and a few golden apples. About 1:1.1."
+    },
+    "schoolhouse": {
+      "file": "motifs/schoolhouse.svg",
+      "width": 440,
+      "height": 420,
+      "use": "A small schoolhouse with a bell tower, a glowing open door and a path in front. About 1:1."
+    },
+    "flowers": {
+      "file": "motifs/flowers.svg",
+      "width": 1080,
+      "height": 190,
+      "use": "A scatter of small meadow flowers in a wide row, for a hill or the bottom edge. Wide: 5.7:1."
+    },
+    "butterflies": {
+      "file": "motifs/butterflies.svg",
+      "width": 300,
+      "height": 190,
+      "use": "Three small butterflies. Small accent. About 1.6:1."
+    },
+    "crayons": {
+      "file": "motifs/crayons.svg",
+      "width": 1080,
+      "height": 330,
+      "use": "A row of twelve upright crayons in brand colors, tips up. Full page width: 3.3:1. Sits on the bottom edge."
+    },
+    "leaves": {
+      "file": "motifs/leaves.svg",
+      "width": 520,
+      "height": 380,
+      "use": "A cluster of autumn leaves in gold, green and blue, for fall events. About 1.4:1."
+    },
+    "ribbon-navy": {
+      "file": "motifs/ribbon-navy.svg",
+      "width": 900,
+      "height": 190,
+      "use": "An empty navy banner ribbon with cream stitching. Put the title or the date on it in cream. 4.7:1."
+    },
+    "ribbon-gold": {
+      "file": "motifs/ribbon-gold.svg",
+      "width": 900,
+      "height": 190,
+      "use": "An empty gold banner ribbon with navy stitching. Put words on it in navy. 4.7:1."
+    },
+    "sparkles": {
+      "file": "motifs/sparkles.svg",
+      "width": 520,
+      "height": 520,
+      "use": "Scattered four-point stars and sparkles. Square accent for corners."
+    },
+    "squiggle": {
+      "file": "motifs/squiggle.svg",
+      "width": 620,
+      "height": 50,
+      "use": "A wavy gold underline. 12:1."
+    },
+    "clouds": {
+      "file": "motifs/clouds.svg",
+      "width": 700,
+      "height": 240,
+      "use": "Two soft white clouds, to sit in a sky. 2.9:1."
+    },
+    "books": {
+      "file": "motifs/books.svg",
+      "width": 400,
+      "height": 360,
+      "use": "A little stack of three books (navy, green, gold) with an apple on top. About 1:1."
+    }
+  }
 }

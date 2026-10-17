@@ -46,6 +46,21 @@ def resolve_group(source: MessageSource, name: str) -> Group:
     raise GroupNotFound(name, [g.name for g in groups])
 
 
+def _result(r: dict[str, Any], score: float) -> dict[str, Any]:
+    return {
+        "file_id": r["file_id"],
+        "score": round(score, 4),
+        "group": r["group_name"],
+        "chat_jid": r["chat_jid"],
+        "message_id": r["message_id"],
+        "sender": r["sender"],
+        "sent_at": r["sent_at"],
+        "caption": r["caption"],
+        "mime": r["mime"],
+        "url": f"/media/{r['file_id']}",
+    }
+
+
 def search_media(
     store: MemoryStore,
     source: MessageSource,
@@ -67,21 +82,49 @@ def search_media(
         for score, r in heapq.nlargest(limit, scored, key=lambda x: x[0]):
             if min_score is not None and score < min_score:
                 break
-            results.append({
-                "file_id": r["file_id"],
-                "score": round(score, 4),
-                "group": r["group_name"],
-                "chat_jid": r["chat_jid"],
-                "message_id": r["message_id"],
-                "sender": r["sender"],
-                "sent_at": r["sent_at"],
-                "caption": r["caption"],
-                "mime": r["mime"],
-                "url": f"/media/{r['file_id']}",
-            })
+            results.append(_result(r, score))
     return {
         "query": query,
         "group": {"name": found.name, "jid": found.jid} if found else None,
         "searched": len(rows),
         "results": results,
     }
+
+
+def pick_diverse(
+    store: MemoryStore,
+    source: MessageSource,
+    embedder: Embedder,
+    queries: list[str],
+    group: str | None = None,
+    count: int = 3,
+    min_score: float | None = None,
+    max_similarity: float = 0.92,
+) -> list[dict[str, Any]]:
+    """Up to `count` photos that match any of `queries`, best first, no two of them near-identical.
+
+    A photo's score is its best score over the queries. Burst shots and the same photo sent to two groups look alike
+    to the model, so a photo that is too much like one already picked is skipped. Fewer than `count` come back when
+    little matches well enough; none when nothing does. Raises GroupNotFound.
+    """
+    found = resolve_group(source, group) if group else None
+    rows = store.media_for_search(embedder.model, found.jid if found else None)
+    if not rows or not queries:
+        return []
+    query_vectors = [embedder.embed_text(q) for q in queries]
+    scored = []
+    for r in rows:
+        vector = array("f")
+        vector.frombytes(r["embedding"])
+        score = max(sum(map(mul, q, vector)) for q in query_vectors)
+        if min_score is None or score >= min_score:
+            scored.append((score, r, vector))
+    scored.sort(key=lambda x: -x[0])
+    picked: list[tuple[float, dict[str, Any], array]] = []
+    for score, r, vector in scored:
+        if len(picked) == count:
+            break
+        if any(sum(map(mul, vector, other)) > max_similarity for _, _, other in picked):
+            continue
+        picked.append((score, r, vector))
+    return [_result(r, score) for score, r, _ in picked]

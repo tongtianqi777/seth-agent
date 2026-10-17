@@ -42,6 +42,19 @@ class Config:
     volunteering: VolunteeringGroups
     media_index: bool
     media_model: str
+    brand_dir: Path
+    flyer_dir: Path
+    chrome: str | None
+    image_provider: str
+    image_model: str
+    image_url: str
+    image_quality: str
+    image_size: str
+    image_api_key: str | None
+    flyer_photo_group: str | None
+    flyer_photo_min_score: float
+    design_effort: str | None
+    design_max_tokens: int
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -52,6 +65,12 @@ class Config:
         provider = env("SETH_PROVIDER", "anthropic").strip().lower()
         if provider not in ("anthropic", "local"):
             raise SystemExit(f"SETH_PROVIDER must be 'anthropic' or 'local', not {provider!r}")
+        image_provider = env("SETH_IMAGE_PROVIDER", "none").strip().lower()
+        if image_provider not in ("none", "openai"):
+            raise SystemExit(f"SETH_IMAGE_PROVIDER must be 'none' or 'openai', not {image_provider!r}")
+        # The group flyer photos come from: every group by default; a group's exact name limits it to that one.
+        photo_group = env("SETH_FLYER_PHOTO_GROUP", "all").strip()
+        flyer_photo_group = None if photo_group.casefold() in ("", "all") else photo_group
         return cls(
             feed_url=env("SETH_FEED_URL", DEFAULT_FEED_URL),
             memory_db=Path(env("SETH_MEMORY_DB", str(REPO_ROOT / "data" / "memory.db"))),
@@ -71,4 +90,17 @@ class Config:
             volunteering=VolunteeringGroups(volunteering),
             media_index=env("SETH_MEDIA_INDEX", "1").strip().lower() not in ("0", "false", "off", "no", ""),
             media_model=env("SETH_MEDIA_MODEL", "openai/clip-vit-base-patch16"),
+            brand_dir=Path(env("SETH_BRAND_DIR", str(REPO_ROOT / "brand"))),
+            flyer_dir=Path(env("SETH_FLYER_DIR", str(REPO_ROOT / "data" / "flyers"))),
+            chrome=env("SETH_CHROME") or None,
+            image_provider=image_provider,
+            image_model=env("SETH_IMAGE_MODEL", "gpt-image-1"),
+            image_url=env("SETH_IMAGE_URL", "https://api.openai.com/v1"),
+            image_quality=env("SETH_IMAGE_QUALITY", "high"),
+            image_size=env("SETH_IMAGE_SIZE", "1024x1536"),
+            image_api_key=env("SETH_IMAGE_API_KEY") or env("OPENAI_API_KEY") or None,
+            flyer_photo_group=flyer_photo_group,
+            flyer_photo_min_score=float(env("SETH_FLYER_PHOTO_MIN_SCORE", "0.25")),
+            design_effort=env("SETH_DESIGN_EFFORT") or ("low" if provider == "local" else None),
+            design_max_tokens=int(env("SETH_DESIGN_MAX_TOKENS", "40000" if provider == "local" else "24000")),
         )

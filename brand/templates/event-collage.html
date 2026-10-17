@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${title_text}</title>
+<style>
+  /* Filled in by seth_agent.flyer.template (placeholders are a dollar sign and braces). */
+  :root {
+    --navy: ${navy}; --blue: ${blue}; --green: ${green}; --gold: ${gold};
+    --cream: ${cream}; --background: ${background}; --text: ${text};
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; overflow: hidden; background: var(--background); }
+  body { font-family: ${font_stack}; color: var(--text); }
+  .page { position: relative; width: 1080px; height: 1350px; display: flex; flex-direction: column; }
+  .page > * { position: relative; z-index: 2; }
+  /* Optional artwork: a picture across the page, with a soft cream veil over the middle so the words stay easy to read. */
+  .page > .art, .page > .veil { position: absolute; inset: 0; z-index: 0; }
+  .art { background-size: cover; background-position: center; }
+  .veil { z-index: 1; background: radial-gradient(ellipse 54% 40% at 50% 42%, rgba(247,244,238,0.88) 0%, rgba(247,244,238,0.6) 65%, rgba(247,244,238,0) 100%); }
+  .logo { padding-top: 80px; text-align: center; }
+  .logo img { width: 540px; height: auto; display: block; margin: 0 auto; }
+  .main {
+    flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 20px 90px 40px;
+  }
+  .fit { display: flex; flex-direction: column; align-items: center; gap: 34px; }
+  h1 {
+    color: var(--navy); font-weight: 800; line-height: 1.04; letter-spacing: -0.01em;
+    text-wrap: balance; overflow-wrap: anywhere; font-size: ${title_size}px;
+  }
+  .rule { width: 140px; height: 10px; border-radius: 5px; background: var(--gold); }
+  .subtitle { font-size: 42px; line-height: 1.25; color: var(--blue); max-width: 820px; text-wrap: balance; }
+  .when {
+    background: var(--navy); color: var(--cream); border-radius: 30px; padding: 40px 56px;
+    display: flex; flex-direction: column; gap: 10px; min-width: 640px; max-width: 900px;
+  }
+  .when .date { font-size: 50px; font-weight: 700; line-height: 1.15; text-wrap: balance; }
+  .when .time { font-size: 64px; font-weight: 800; line-height: 1.1; color: var(--gold); }
+  .where .label { font-size: 26px; font-weight: 700; letter-spacing: 0.22em; color: var(--green); text-transform: uppercase; }
+  .where .place { font-size: 46px; font-weight: 600; line-height: 1.2; color: var(--navy); margin-top: 6px; text-wrap: balance; }
+  .where .address { font-size: 36px; font-weight: 500; line-height: 1.25; color: var(--blue); margin-top: 6px; text-wrap: balance; }
+  .details { font-size: 34px; line-height: 1.4; max-width: 820px; text-wrap: pretty; }
+  /* Optional photos from the school's library, in a row above the slogan. */
+  /* Photos laid out like prints on a table: white borders, a slight tilt each way, overlapping a little. */
+  .photos { flex: none; display: flex; justify-content: center; align-items: flex-end; padding: 0 30px 34px; }
+  .photos img {
+    flex: 0 1 270px; min-width: 0; height: 218px; margin: 0 -9px; object-fit: cover; object-position: 50% 30%;
+    background: #fff; border: 11px solid #fff; border-bottom-width: 38px; border-radius: 6px;
+    box-shadow: 0 8px 18px rgba(0, 42, 70, 0.35);
+  }
+  .photos img:nth-child(4n+1) { transform: rotate(-3.2deg) translateY(6px); }
+  .photos img:nth-child(4n+2) { transform: rotate(2.2deg) translateY(-6px); z-index: 1; }
+  .photos img:nth-child(4n+3) { transform: rotate(-1.6deg) translateY(4px); z-index: 2; }
+  .photos img:nth-child(4n+4) { transform: rotate(3deg) translateY(-4px); }
+  .has-photos .logo { padding-top: 46px; }
+  .has-photos .logo img { width: 400px; }
+  .slogan {
+    flex: none; background: var(--background); padding: 22px 50px 24px; text-align: center; color: var(--navy);
+    font-size: 25px; font-weight: 600; line-height: 1.35; letter-spacing: 0.01em; text-wrap: balance;
+  }
+  .slogan span { white-space: nowrap; }
+  .slogan span:not(:last-child)::after { content: " \2022 "; color: var(--gold); }
+  .slogan span.eol::after { content: none; }  /* no bullet where the line breaks */
+  .stripe { display: flex; height: 32px; flex: none; }
+  .stripe div { flex: 1; }
+</style>
+</head>
+<body>
+<div class="page${page_class}">
+  ${art_block}
+  <div class="logo"><img src="${logo_src}" alt="${school_name}"></div>
+  <div class="main">
+    <div class="fit">
+      <h1>${title}</h1>
+      <div class="rule"></div>
+      ${subtitle_block}
+      ${when_block}
+      ${where_block}
+      ${details_block}
+    </div>
+  </div>
+  ${photos_block}
+  <div class="slogan">${slogan_html}</div>
+  <div class="stripe"><div style="background: var(--navy)"></div><div style="background: var(--green)"></div><div style="background: var(--gold)"></div></div>
+</div>
+<script>
+  // A long request must still fit: shrink the text block until it does.
+  (function () {
+    var main = document.querySelector('.main'), fit = document.querySelector('.fit');
+    var room = main.clientHeight - 60, zoom = 1;
+    // The slogan's phrases are joined by bullets; drop the bullet at the end of a line.
+    var phrases = document.querySelectorAll('.slogan span');
+    for (var i = 0; i < phrases.length - 1; i++) {
+      if (phrases[i + 1].offsetTop > phrases[i].offsetTop) phrases[i].className = 'eol';
+    }
+    while (fit.getBoundingClientRect().height > room && zoom > 0.5) { zoom -= 0.02; fit.style.zoom = zoom; }
+  })();
+</script>
+</body>
+</html>
