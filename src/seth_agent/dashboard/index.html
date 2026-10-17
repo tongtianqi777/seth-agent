@@ -99,6 +99,30 @@
   .photo figcaption { padding: 7px 9px 8px; font-size: 12px; color: var(--muted); line-height: 1.4; }
   .photo figcaption b { display: block; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .photo .cap { margin-top: 2px; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Media tab sections: slideshow videos, then photo search */
+  .media-section + .media-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .media-section h3 { margin: 0 0 2px; font-size: 15px; font-weight: 600; color: var(--heading); }
+  .jobs { display: grid; gap: 12px; margin-top: 14px; }
+  .jobs:empty { display: none; }
+  .job { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 14px; background: var(--dim); min-width: 0; }
+  .job .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .job .head b { font-size: 15px; color: var(--heading); overflow-wrap: anywhere; }
+  .job .head .when { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .job .ask { margin: 2px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .job .busy { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .bar-run { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 8px; position: relative; }
+  .bar-run::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; border-radius: 3px; background: var(--gold); animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% { left: -30%; } 100% { left: 100%; } }
+  @media (prefers-reduced-motion: reduce) { .bar-run::after { animation: none; width: 100%; opacity: .5; } }
+  .job video { display: block; width: 100%; max-width: 720px; aspect-ratio: 16 / 9; margin-top: 10px; border-radius: 10px; background: #000; }
+  .job .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .job .actions a.btn { display: inline-block; text-decoration: none; background: var(--primary); color: var(--primary-text); border-radius: 9px; font-weight: 600; }
+  .job .actions a.btn:hover { background: var(--primary-hover); }
+  .job .facts { margin: 10px 0 0; font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+  .job .facts b { color: var(--text); font-weight: 600; }
+  .job .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .job .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 7px; border: 1px solid var(--line); background: var(--off-bg); }
+  .job .error { margin-top: 10px; }
   #photo-dialog { width: min(900px, calc(100vw - 32px)); }
   #photo-dialog img { display: block; max-width: 100%; max-height: calc(100vh - 220px); margin: 0 auto 12px; border-radius: 8px; }
 
@@ -240,20 +264,39 @@
 
   <section id="panel-media" role="tabpanel" aria-labelledby="tab-media" class="card" hidden>
     <h2>Media</h2>
-    <p class="sub">Find photos from the school's WhatsApp groups by describing what they show.</p>
-    <form id="media-form" class="search">
-      <label class="q">Search
-        <input id="media-query" type="search" placeholder="e.g. children playing on the playground" autocomplete="off" required>
-      </label>
-      <label>Group
-        <select id="media-group"><option value="Preschool">Preschool</option></select>
-      </label>
-      <button id="media-go" class="go" type="submit">Search</button>
-    </form>
-    <div class="error" id="media-error" hidden></div>
-    <div class="warning" id="media-warning" hidden></div>
-    <p class="results-head" id="media-summary" role="status" hidden></p>
-    <div class="photos" id="media-results"></div>
+    <p class="sub">The school's photos from its WhatsApp groups: make a video of an event, or find photos by describing them.</p>
+
+    <div class="media-section" aria-labelledby="show-title">
+      <h3 id="show-title">Generate slideshow video</h3>
+      <p class="sub">Describe an event. The agent finds its photos and makes a video in the school's branding that you can watch and download. Include the date to use only photos from around that day.</p>
+      <form id="show-form" class="search">
+        <label class="q">Event
+          <input id="show-prompt" type="text" maxlength="300" placeholder="e.g. Christmas Program on 12/12/2026 at school" autocomplete="off" required>
+        </label>
+        <button id="show-go" class="go" type="submit">Generate video</button>
+      </form>
+      <div class="error" id="show-error" hidden></div>
+      <div class="warning" id="show-warning" hidden></div>
+      <div class="jobs" id="show-jobs" aria-live="polite"></div>
+    </div>
+
+    <div class="media-section" aria-labelledby="find-title">
+      <h3 id="find-title">Find photos</h3>
+      <p class="sub">Search by what the photos show.</p>
+      <form id="media-form" class="search">
+        <label class="q">Search
+          <input id="media-query" type="search" placeholder="e.g. children playing on the playground" autocomplete="off" required>
+        </label>
+        <label>Group
+          <select id="media-group"><option value="Preschool">Preschool</option></select>
+        </label>
+        <button id="media-go" class="go" type="submit">Search</button>
+      </form>
+      <div class="error" id="media-error" hidden></div>
+      <div class="warning" id="media-warning" hidden></div>
+      <p class="results-head" id="media-summary" role="status" hidden></p>
+      <div class="photos" id="media-results"></div>
+    </div>
   </section>
 
   <!-- One calendar: the toolbar and the month/list views. The school and each volunteering group use a copy. -->
@@ -808,6 +851,124 @@ const volunteering = createCalendar($("vol-calendar"), {
   },
 });
 
+/* ---------- Slideshow videos ----------
+   POST /slideshows starts a video, which takes a minute or two, so each one is a job. While any job is waiting or
+   being made the list is re-read every couple of seconds; finished jobs play in place and can be downloaded. */
+const slideshows = (() => {
+  const LABEL = { queued: ["Waiting", "warn"], running: ["Making the video", "warn"], done: ["Ready", "ok"], failed: ["Failed", "bad"] };
+  const cards = new Map(); // job id -> {key, node}, so an unchanged job keeps its <video> while others update
+  let enabled = true, timer = null, loaded = false;
+
+  function showError(text) {
+    $("show-error").hidden = !text;
+    $("show-error").textContent = text;
+  }
+
+  function fact(label, text) {
+    const row = el("div");
+    row.append(el("b", null, label + " "), text);
+    return row;
+  }
+
+  function card(j) {
+    const node = el("article", "job");
+    const [text, tone] = LABEL[j.status] || [j.status, ""];
+    const head = el("div", "head");
+    head.append(el("b", null, j.title || j.prompt), el("span", "pill " + tone, text), el("span", "when", when(j.created_at)));
+    node.append(head);
+    if (j.title && j.title !== j.prompt) node.append(el("p", "ask", "You asked: " + j.prompt));
+
+    if (j.status === "queued" || j.status === "running") {
+      node.append(el("p", "busy", j.status === "queued"
+        ? "Waiting for an earlier video to finish."
+        : "Finding photos and making the video. This usually takes a minute or two; you can leave this page open."));
+      node.append(el("div", "bar-run"));
+    } else if (j.status === "failed") {
+      node.append(el("div", "error", j.error || "The video couldn't be made."));
+    } else {
+      const video = el("video");
+      video.controls = true;
+      video.preload = "metadata";
+      video.src = j.video_url.replace(/^\//, "") + "#t=1"; // shows a frame instead of a black box
+      node.append(video);
+      const actions = el("div", "actions");
+      const link = el("a", "btn", "Download video");
+      link.href = j.video_url.replace(/^\//, "") + "?download=true";
+      link.setAttribute("download", "");
+      actions.append(link, el("span", "note", `${j.photos.length} photos · ${Math.round(j.seconds)} seconds`));
+      node.append(actions);
+      const facts = el("div", "facts");
+      facts.append(fact("Understood as:", [j.title, j.event_date && fmtDay(j.event_date, { weekday: "long", month: "long", day: "numeric", year: "numeric" }), j.at_school && "at the school"].filter(Boolean).join(" · ")));
+      if (j.queries.length) facts.append(fact("Looked for:", j.queries.join(" / ")));
+      if (j.window) facts.append(fact("Photos from:", `${fmtDay(j.window[0], { month: "short", day: "numeric" })} to ${fmtDay(j.window[1], { month: "short", day: "numeric", year: "numeric" })}`));
+      node.append(facts);
+      const thumbs = el("div", "thumbs");
+      for (const p of j.photos) {
+        const img = el("img");
+        img.src = "media/" + p.file_id;
+        img.loading = "lazy";
+        img.alt = `Photo from ${p.group}, ${when(p.sent_at)}`;
+        img.title = `${p.group} · ${when(p.sent_at)}`;
+        thumbs.append(img);
+      }
+      node.append(thumbs, el("p", "note", "Watch it before you share it: the photos show children."));
+    }
+    return node;
+  }
+
+  function render(jobs) {
+    const live = new Set(jobs.map((j) => j.id));
+    for (const id of cards.keys()) if (!live.has(id)) cards.delete(id);
+    const nodes = jobs.map((j) => {
+      const key = JSON.stringify(j);
+      const have = cards.get(j.id);
+      if (have && have.key === key) return have.node;
+      const made = { key, node: card(j) };
+      cards.set(j.id, made);
+      return made.node;
+    });
+    $("show-jobs").replaceChildren(...nodes);
+  }
+
+  async function refresh() {
+    clearTimeout(timer);
+    try {
+      const res = await api("slideshows");
+      enabled = res.enabled;
+      $("show-warning").hidden = enabled;
+      $("show-warning").textContent = res.reason || "";
+      $("show-go").disabled = !enabled;
+      render(res.jobs);
+      loaded = true;
+      if (res.jobs.some((j) => j.status === "queued" || j.status === "running")) timer = setTimeout(refresh, 2000);
+    } catch (e) {
+      if (!loaded) showError(e.message); // later hiccups are retried by the next refresh
+      else timer = setTimeout(refresh, 5000);
+    }
+  }
+
+  async function generate(e) {
+    e.preventDefault();
+    const prompt = $("show-prompt").value.trim();
+    if (!prompt || !enabled) return;
+    const go = $("show-go");
+    go.disabled = true;
+    showError("");
+    try {
+      await api("slideshows", { prompt });
+      $("show-prompt").value = "";
+      await refresh();
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      go.disabled = !enabled;
+    }
+  }
+  $("show-form").onsubmit = generate;
+
+  return { refresh };
+})();
+
 /* ---------- Media ----------
    Photo search over POST /media/search. Searching only happens on demand; the tab itself
    just keeps the group list (from /metrics) current. */
@@ -837,6 +998,7 @@ const media = (() => {
   $("media-group").onchange = (e) => { choice = e.target.value; };
 
   async function refresh() {
+    slideshows.refresh();
     try {
       const m = await api("metrics");
       setGroups(m.photos.by_group.map((g) => g.group));

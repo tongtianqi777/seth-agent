@@ -42,7 +42,8 @@ def find_chrome(configured: str | None = None) -> str:
     raise FlyerError("no Chrome, Chromium or Edge found: install Google Chrome, or set SETH_CHROME to its path")
 
 
-def render_png(html: str, out: Path, chrome: str | None = None) -> None:
+def render_png(html: str, out: Path, chrome: str | None = None, size: tuple[int, int] = (WIDTH, HEIGHT)) -> None:
+    """Draw `html` to a PNG of `size` (a flyer's shape unless the caller, such as the slideshow, says otherwise)."""
     binary = find_chrome(chrome)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -54,7 +55,7 @@ def render_png(html: str, out: Path, chrome: str | None = None) -> None:
         cmd = [
             binary, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
             f"--user-data-dir={Path(tmp) / 'profile'}", "--force-device-scale-factor=1",
-            f"--window-size={WIDTH},{HEIGHT}", f"--screenshot={shot}", page.as_uri(),
+            f"--window-size={size[0]},{size[1]}", f"--screenshot={shot}", page.as_uri(),
         ]  # fmt: skip
         try:
             subprocess.run(cmd, capture_output=True, timeout=60, check=False)

@@ -6,7 +6,7 @@ This is the reference for apps and tools that read the school calendar from seth
 
 - **Base URL:** `http://127.0.0.1:8765`. Change it with `SETH_API_HOST` and `SETH_API_PORT`.
 - **Availability:** the API is served while `seth-agent run` is running.
-- **Access:** it's read-only and has no authentication. It listens on localhost only, so only programs on the same machine can reach it.
+- **Access:** it has no authentication, and apart from searching photos and asking for slideshow videos it only reads. It listens on localhost only, so only programs on the same machine can reach it.
 - **Format:** every response is JSON.
 - **Dates** are `YYYY-MM-DD` in the agent's local timezone.
 - **Timestamps** are RFC3339 in UTC, e.g. `2026-10-12T17:02:00Z`.
@@ -20,6 +20,9 @@ This is the reference for apps and tools that read the school calendar from seth
 | [`GET /events/{id}`](#get-eventsid) | One event, with the messages behind it and its history |
 | [`POST /media/search`](#post-mediasearch) | Find photos by describing them, optionally within one group |
 | [`GET /media/{id}`](#get-mediaid) | An indexed photo's bytes |
+| [`POST /slideshows`](#post-slideshows) | Start making a slideshow video of an event |
+| [`GET /slideshows`](#get-slideshows), [`GET /slideshows/{id}`](#get-slideshows) | The videos being made and finished, and how each is getting on |
+| [`GET /slideshows/{id}/video`](#get-slideshowsidvideo) | A finished video, to play or download |
 | [`GET /health`](#get-health) | Whether the agent is keeping up |
 | [`GET /metrics`](#get-metrics) | Counts for a status page: what the agent has done, and the photo index |
 
@@ -249,6 +252,61 @@ A search always returns the best `limit` photos it has, even if none is a good m
 The photo with this seth-feed file id, as raw bytes with its `Content-Type`, fetched from seth-feed. Only photos that appear in search results are served.
 
 **Errors:** `404` if the photo isn't indexed, or seth-feed no longer has it. `502` if seth-feed can't be reached.
+
+## `POST /slideshows`
+
+Starts a slideshow video of an event, made like `seth-agent slideshow --find` (see the [README](../README.md#slideshow-videos)): the model reads the sentence into the event's name, date and place, photo search finds its photos (around its date, when it has one), and the video is made in the school's branding. A video takes a minute or two, so this answers at once with a job, and you follow it with [`GET /slideshows/{id}`](#get-slideshows).
+
+Needs photo search (see [`POST /media/search`](#post-mediasearch)) and a model to read the sentence.
+
+```bash
+curl -s http://127.0.0.1:8765/slideshows \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Christmas Program on 12/12/2026 at school"}'
+```
+
+```json
+{
+  "id": "597c1f559138",
+  "prompt": "Christmas Program on 12/12/2026 at school",
+  "status": "queued",
+  "created_at": "2026-12-14T22:38:43Z",
+  "finished_at": null,
+  "error": null,
+  "title": null, "event_date": null, "at_school": null,
+  "queries": [], "window": null, "photos": [], "seconds": null,
+  "video_url": null
+}
+```
+
+**Request body** (JSON): `prompt`, the event in a sentence, 1 to 300 characters. Leave the date out to look through every photo.
+
+**Errors:** `422` for a blank or too long `prompt`. `429` when three videos are already waiting or being made. `503` when photo search or slideshows aren't set up.
+
+## `GET /slideshows`
+
+The most recent ten jobs, newest first, with whether slideshows are available: `{"enabled": true, "reason": null, "jobs": [...]}`. When `enabled` is `false`, `reason` says why (and `jobs` is empty).
+
+`GET /slideshows/{id}` returns one job. Videos are made one at a time, in the order they were asked for. A job's fields:
+
+| Field | Description |
+|---|---|
+| `status` | `queued`, `running`, `done` or `failed` |
+| `error` | Why it failed, in words for a person, when `status` is `failed` |
+| `title`, `event_date`, `at_school` | What the model understood from the sentence (once the video is made) |
+| `queries` | What it looked for in the photos |
+| `window` | The two days (`YYYY-MM-DD`, both included) the photos were taken from, when the sentence had a date, otherwise `null` |
+| `photos[]` | The photos in the video, in the order shown: `file_id` (see [`GET /media/{id}`](#get-mediaid)), `group`, `sent_at` |
+| `seconds` | How long the video runs |
+| `video_url` | Where to get the video, when `status` is `done` |
+
+Jobs are kept in memory: the newest ten stay (an older one is deleted with its video file), and all are forgotten when the agent restarts. **Errors:** `404` if there is no such job.
+
+## `GET /slideshows/{id}/video`
+
+The finished video, an MP4 (`video/mp4`) that supports seeking. It plays in a browser; add `?download=true` to make the browser save it as `<title>.mp4` instead.
+
+**Errors:** `404` if there is no such job, `409` if the video isn't ready yet (or its file is gone).
 
 ## `GET /health`
 

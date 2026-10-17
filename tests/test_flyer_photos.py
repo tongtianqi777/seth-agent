@@ -43,7 +43,7 @@ def indexed(feed, store, source, embedder):
 
 @pytest.fixture
 def library(indexed, store, source, embedder, monkeypatch):
-    monkeypatch.setattr(photos_module, "prepare", lambda data: Image("image/jpeg", data))  # the fake photos aren't pictures
+    monkeypatch.setattr(photos_module, "prepare", lambda data, max_side=0: Image("image/jpeg", data))  # the fake photos aren't pictures
     return PhotoLibrary(store, source, embedder, group="Preschool", min_score=0.5)
 
 
