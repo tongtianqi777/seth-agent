@@ -1,0 +1,40 @@
+{
+  "name": "Seth Christian Education Institute",
+  "short_name": "SETH",
+  "logos": {
+    "primary": {
+      "file": "logos/logo-light.png",
+      "use": "Full logo for light backgrounds (white, cream). The default choice."
+    },
+    "on_dark": {
+      "file": "logos/logo-dark.png",
+      "use": "Full logo for dark backgrounds (navy, photos). Use instead of primary whenever the background is dark."
+    },
+    "crest": {
+      "file": "logos/crest.png",
+      "use": "The shield on its own. For small spaces, avatars and icons, where the full logo would be unreadable."
+    }
+  },
+  "colors": {
+    "navy": "#002a46",
+    "blue": "#003e5d",
+    "green": "#739e30",
+    "gold": "#f1a618",
+    "cream": "#f0e9e0",
+    "background": "#f7f4ee",
+    "text": "#10283a"
+  },
+  "color_roles": {
+    "headline": "navy",
+    "page_background": "background",
+    "accent": ["green", "gold"],
+    "text_on_navy": "cream"
+  },
+  "fonts": {
+    "stack": "\"Avenir Next\", Avenir, \"Segoe UI\", -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "files": [],
+    "note": "System fonts only for now. Put any font files in fonts/ and list them in 'files' if a flyer needs a fixed typeface."
+  },
+  "stripe": "Navy, green and gold in equal thirds, as in the dashboard header. A good footer or divider for flyers.",
+  "templates_dir": "templates"
+}
