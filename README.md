@@ -101,7 +101,7 @@ You need:
 
 - macOS with [Homebrew](https://brew.sh) Python 3.11 or newer. The system Python is too old.
 - [seth-ingestion](../seth-ingestion) set up and capturing the school's WhatsApp messages, with its `seth-feed` API running (`./feed.sh`, default `http://127.0.0.1:8080`).
-- An Anthropic API key from the [Claude Console](https://console.anthropic.com), or a model running on this machine (see [Running a local model](#running-a-local-model)).
+- A Mac with about 64 GB of memory, to run the local model with [Ollama](https://ollama.com). This quick start has the agent read the messages with a model on this machine, so no message text leaves it. (To use Claude instead, see [Using Claude instead](#using-claude-instead).)
 
 **1. Install**
 
@@ -111,13 +111,37 @@ cd seth-agent
 .venv/bin/pip install -e '.[dev]'
 ```
 
-**2. Add your API key**
+**2. Set up the local model**
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+brew install ollama
+brew services start ollama
+ollama pull gemma4:31b
 ```
 
-To keep it set, add that line to your `~/.zshrc`.
+The model is about 19 GB. Then give it a longer context window. Ollama silently cuts off whatever doesn't fit its default window, and the agent would never see the newest messages. Create a file named `Modelfile` with:
+
+```
+FROM gemma4:31b
+PARAMETER num_ctx 32768
+PARAMETER temperature 0
+```
+
+and build a named copy of the model. It shares the downloaded weights, so it takes no extra disk space:
+
+```bash
+ollama create seth-reader -f Modelfile
+```
+
+Tell the agent to use it. To keep these set, add the lines to your `~/.zshrc`:
+
+```bash
+export SETH_PROVIDER=local
+export SETH_LOCAL_MODEL=seth-reader
+export SETH_BATCH_SIZE=8
+```
+
+Step by step, with how to keep the model loaded and check that it runs on the GPU, in [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md).
 
 **3. Start it**
 
@@ -125,7 +149,7 @@ To keep it set, add that line to your `~/.zshrc`.
 .venv/bin/seth-agent run
 ```
 
-The first time it runs, the agent reads every message already captured and builds the school calendar from them. After that, it watches for new messages. Leave it running in a terminal tab, and press **Ctrl+C** to stop.
+The first time it runs, the agent reads every message already captured and builds the school calendar from them. With a local model that can take a while. After that, it watches for new messages. Leave it running in a terminal tab, and press **Ctrl+C** to stop.
 
 **4. Look at the calendar**
 
@@ -138,6 +162,15 @@ The first time it runs, the agent reads every message already captured and build
 2026-10-23  #3 Field trip
                Science museum; the bus leaves at 9am.
 Nov 2026    #2 Parent-teacher conferences (rescheduled)
+```
+
+### Using Claude instead
+
+To have Claude read the messages, use an API key from the [Claude Console](https://console.anthropic.com) instead of step 2. Only the message text is sent to Claude.
+
+```bash
+export SETH_PROVIDER=anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ## Volunteering groups
