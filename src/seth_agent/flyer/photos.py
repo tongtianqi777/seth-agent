@@ -58,7 +58,7 @@ def plan_photos(llm: LLM, spec: FlyerSpec) -> list[str]:
     return [q.strip()[:100] for q in brief.queries if q.strip()][:3]
 
 
-def prepare(data: bytes) -> Image:
+def prepare(data: bytes, max_side: int = MAX_SIDE) -> Image:
     """The photo as it goes on the page: turned upright (phones store the turn in the file), shrunk, as a JPEG."""
     from PIL import Image as PILImage
     from PIL import ImageOps
@@ -67,7 +67,7 @@ def prepare(data: bytes) -> Image:
         picture = ImageOps.exif_transpose(PILImage.open(io.BytesIO(data))).convert("RGB")
     except Exception as e:
         raise PhotoError(f"a photo can't be read as a picture: {e}") from e
-    picture.thumbnail((MAX_SIDE, MAX_SIDE))
+    picture.thumbnail((max_side, max_side))
     out = io.BytesIO()
     picture.save(out, "JPEG", quality=86)
     return Image("image/jpeg", out.getvalue())
@@ -83,18 +83,23 @@ class PhotoLibrary:
         embedder: Embedder | None,
         group: str | None = None,
         min_score: float = 0.25,
+        max_side: int = MAX_SIDE,
     ):
         self.store, self.source, self.embedder = store, source, embedder
-        self.group, self.min_score = group, min_score
+        self.group, self.min_score, self.max_side = group, min_score, max_side
 
-    def find(self, queries: list[str], count: int) -> list[Photo]:
-        """Up to `count` photos for `queries`. Fewer, or none, if little in the library is a good match."""
+    def find(
+        self, queries: list[str], count: int, sent_from: str | None = None, sent_until: str | None = None
+    ) -> list[Photo]:
+        """Up to `count` photos for `queries`. Fewer, or none, if little in the library is a good match.
+        `sent_from` and `sent_until` (ISO dates) keep only photos sent in that window."""
         if self.embedder is None:
             raise PhotoError("photo search is off: install it with `pip install -e '.[media]'` (and leave SETH_MEDIA_INDEX on)")
         try:
             # A few spares, in case seth-feed no longer has a file.
             found = pick_diverse(
-                self.store, self.source, self.embedder, queries, self.group, count + 2, self.min_score
+                self.store, self.source, self.embedder, queries, self.group, count + 2, self.min_score,
+                sent_from=sent_from, sent_until=sent_until,
             )
         except GroupNotFound as e:
             raise PhotoError(f"{e} (set SETH_FLYER_PHOTO_GROUP, or 'all')") from e
@@ -109,7 +114,7 @@ class PhotoLibrary:
             except SourceError as e:
                 raise PhotoError(str(e)) from e
             if data is not None:
-                photos.append(Photo(r["file_id"], r["score"], r["group"], r["sent_at"], prepare(data)))
+                photos.append(Photo(r["file_id"], r["score"], r["group"], r["sent_at"], prepare(data, self.max_side)))
         return photos
 
     def get(self, file_ids: Sequence[int]) -> list[Photo]:
@@ -125,5 +130,5 @@ class PhotoLibrary:
                 raise PhotoError(str(e)) from e
             if data is None:
                 raise PhotoError(f"photo {file_id} is no longer available from seth-feed")
-            photos.append(Photo(file_id, None, row["group_name"], row["sent_at"], prepare(data)))
+            photos.append(Photo(file_id, None, row["group_name"], row["sent_at"], prepare(data, self.max_side)))
         return photos

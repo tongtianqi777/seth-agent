@@ -100,15 +100,22 @@ def pick_diverse(
     count: int = 3,
     min_score: float | None = None,
     max_similarity: float = 0.92,
+    sent_from: str | None = None,
+    sent_until: str | None = None,
 ) -> list[dict[str, Any]]:
     """Up to `count` photos that match any of `queries`, best first, no two of them near-identical.
 
     A photo's score is its best score over the queries. Burst shots and the same photo sent to two groups look alike
     to the model, so a photo that is too much like one already picked is skipped. Fewer than `count` come back when
-    little matches well enough; none when nothing does. Raises GroupNotFound.
+    little matches well enough; none when nothing does. `sent_from` and `sent_until` (ISO dates, both included) keep
+    only photos sent on those days. Raises GroupNotFound.
     """
     found = resolve_group(source, group) if group else None
     rows = store.media_for_search(embedder.model, found.jid if found else None)
+    if sent_from is not None:
+        rows = [r for r in rows if r["sent_at"][:10] >= sent_from]
+    if sent_until is not None:
+        rows = [r for r in rows if r["sent_at"][:10] <= sent_until]
     if not rows or not queries:
         return []
     query_vectors = [embedder.embed_text(q) for q in queries]

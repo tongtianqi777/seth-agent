@@ -1,4 +1,4 @@
-"""seth-agent command line: run | once | calendar | photos | flyer."""
+"""seth-agent command line: run | once | calendar | photos | flyer | slideshow."""
 
 from __future__ import annotations
 
@@ -46,6 +46,21 @@ def main(argv: list[str] | None = None) -> None:
     address = flyer.add_mutually_exclusive_group()
     address.add_argument("--address", dest="address", action="store_true", default=None, help="print the school's address")
     address.add_argument("--no-address", dest="address", action="store_false", help="leave the school's address off")
+    show = sub.add_parser("slideshow", help="make a slideshow video, in the school's branding, from photos you choose or find")
+    show.add_argument("title", help="with --photo, the video's title, e.g. 'Christmas Program 2026'; with --find, the event in a sentence, e.g. 'Christmas Program on 12/12/2026 at school'")
+    chosen = show.add_mutually_exclusive_group(required=True)
+    chosen.add_argument("--photo", dest="photo_ids", type=int, action="append", metavar="ID", help="a photo to include (its id from the dashboard's Media tab); repeat for each, in the order to show them")
+    chosen.add_argument("--find", action="store_true", help="find the event's photos in the library from the sentence, around the date it gives")
+    show.add_argument("--count", type=int, default=12, choices=range(2, 41), metavar="N", help="with --find, how many photos to look for (2-40, default 12)")
+    show.add_argument("--photo-group", help="with --find, take photos from this group ('all' for every group); default SETH_FLYER_PHOTO_GROUP")
+    show.add_argument("-o", "--output", type=Path, help="where to save the MP4; default data/slideshows/")
+    show.add_argument("--subtitle", help="a line under the title, e.g. the date: 'December 12, 2026' (with --find, the date from the sentence is used if you don't give one)")
+    show.add_argument("--end-text", help="a closing line on the last card, e.g. 'Thank you for a wonderful year!'")
+    address = show.add_mutually_exclusive_group()
+    address.add_argument("--address", dest="address", action="store_true", default=None, help="print the school's address on the last card (with --find, that is decided from the sentence unless you say)")
+    address.add_argument("--no-address", dest="address", action="store_false", help="leave the school's address off")
+    show.add_argument("--seconds", type=float, default=5.0, help="seconds each photo is shown (2-20, default 5)")
+    show.add_argument("--music", type=Path, help="an audio file to play under the video")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -65,6 +80,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "flyer":
         _make_flyer(config, args)
+        return
+
+    if args.command == "slideshow":
+        _make_slideshow(config, args)
         return
 
     from .agent import build_agent
@@ -89,7 +108,7 @@ def main(argv: list[str] | None = None) -> None:
     poller.start()
     try:
         uvicorn.run(
-            create_app(agent.store, agent.source, config.tz, config.volunteering, agent.embedder),
+            create_app(agent.store, agent.source, config.tz, config.volunteering, agent.embedder, _slideshow_jobs(config, agent)),
             host=config.api_host,
             port=config.api_port,
             access_log=args.verbose,  # per-request dashboard lines are noise unless -v
@@ -162,7 +181,81 @@ def _make_flyer(config: Config, args: argparse.Namespace) -> None:
     print(flyer.path)
 
 
-def _photo_library(config: Config, group: str | None, searching: bool):
+def _slideshow_jobs(config: Config, agent):
+    """The dashboard's slideshow videos: made in the background, one at a time, from a sentence about the event."""
+    from .flyer import PhotoLibrary
+    from .llm import build_llm
+    from .slideshow import make_from_request
+    from .slideshow.jobs import SlideshowJobs
+
+    llm = build_llm(config)
+    library = PhotoLibrary(
+        agent.store, agent.source, agent.embedder, config.flyer_photo_group, config.flyer_photo_min_score, max_side=1920
+    )
+
+    def make(prompt: str, out: Path):
+        today = datetime.now(config.tz).date()
+        return make_from_request(llm, library, prompt, config.brand_dir, today, out, chrome=config.chrome, ffmpeg=config.ffmpeg)
+
+    return SlideshowJobs(make, config.slideshow_dir)
+
+
+def _make_slideshow(config: Config, args: argparse.Namespace) -> None:
+    import re
+
+    from .extractors.base import PermanentError, TransientError
+    from .flyer import FlyerError, PhotoError
+    from .flyer.template import format_date
+    from .llm import build_llm
+    from .slideshow import VideoError, make_from_request, make_slideshow
+
+    today = datetime.now(config.tz).date()
+    found = None
+
+    def default_output(title: str) -> Path:
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "slideshow"
+        return args.output or config.slideshow_dir / f"{today.isoformat()}-{slug}.mp4"
+
+    try:
+        # Video frames are bigger than a flyer's photos, so the photos are kept at full screen size.
+        library = _photo_library(config, args.photo_group, searching=args.find, max_side=1920)
+        if args.find:
+            found, show = make_from_request(
+                build_llm(config), library, args.title, config.brand_dir, today, default_output, args.count,
+                args.subtitle, args.end_text, args.address, args.seconds, args.music, config.chrome, config.ffmpeg,
+            )  # fmt: skip
+        else:
+            show = make_slideshow(
+                args.title, library.get(args.photo_ids), default_output(args.title), config.brand_dir, args.subtitle,
+                args.end_text, bool(args.address), args.seconds, args.music, config.chrome, config.ffmpeg,
+            )  # fmt: skip
+    except PhotoError as e:
+        raise SystemExit(f"photos: {e}")
+    except OSError as e:
+        raise SystemExit(f"couldn't read or write a file: {e}")
+    except TransientError as e:
+        raise SystemExit(f"couldn't reach the model, try again: {e}")
+    except (PermanentError, VideoError, FlyerError) as e:
+        raise SystemExit(f"couldn't make the slideshow: {e}")
+    if found:  # say what was understood, so a misread date or a wrong search is caught before the video is shared
+        spec = found.spec
+        read = [spec.title, spec.event_date and format_date(spec.event_date), spec.at_school and "school address"]
+        print("Read from your request: " + " | ".join(x for x in read if x))
+        print("Looked for: " + " / ".join(found.queries))
+        if found.window:
+            print(f"Photos sent {found.window[0]} to {found.window[1]}.")
+        if len(found.photos) < args.count:
+            print(f"Only {len(found.photos)} of the {args.count} you asked for matched well enough.")
+    for p in show.photos:
+        how = f", score {p.score:.2f}" if p.score is not None else ""
+        print(f"Photo #{p.file_id}: {p.group}, {p.sent_at[:10]}{how}")
+    if found:
+        print("  Don't like one? Leave it out by listing the photos you want with --photo ID, in order.")
+    print(f"{len(show.photos)} photos, {show.seconds:.0f} seconds. Watch it before you share it: the photos show children.")
+    print(show.path)
+
+
+def _photo_library(config: Config, group: str | None, searching: bool, max_side: int | None = None):
     from .embeddings import build_embedder
     from .flyer import PhotoLibrary
     from .memory.store import MemoryStore
@@ -178,6 +271,7 @@ def _photo_library(config: Config, group: str | None, searching: bool):
         build_embedder(config) if searching else None,
         group,
         config.flyer_photo_min_score,
+        **({"max_side": max_side} if max_side else {}),
     )
 
 

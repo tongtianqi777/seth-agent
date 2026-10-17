@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from datetime import date, datetime, timezone, tzinfo
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -16,6 +18,7 @@ from .embeddings import Embedder
 from .groups import VolunteeringGroups
 from .media_search import GroupNotFound, search_media
 from .memory.store import SCHOOL, VOLUNTEERING, MemoryStore
+from .slideshow.jobs import DONE, Busy, SlideshowJobs
 from .source import MessageSource, SourceError
 
 
@@ -36,12 +39,27 @@ class MediaQuery(BaseModel):
         return v.strip()
 
 
+class SlideshowRequest(BaseModel):
+    prompt: str = Field(
+        max_length=300,
+        description="The event, in a sentence, e.g. 'Christmas Program on 12/12/2026 at school'. The agent finds its photos",
+    )
+
+    @field_validator("prompt")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("prompt must not be blank")
+        return v.strip()
+
+
 def create_app(
     store: MemoryStore,
     source: MessageSource,
     tz: tzinfo,
     volunteering: VolunteeringGroups | None = None,
     embedder: Embedder | None = None,
+    slideshows: SlideshowJobs | None = None,
 ) -> FastAPI:
     app = FastAPI(title="seth-agent memory")
     volunteering = volunteering or VolunteeringGroups()
@@ -137,6 +155,54 @@ def create_app(
         if data is None:
             raise HTTPException(404, "seth-feed no longer has this photo")
         return Response(data, media_type=photo["mime"])
+
+    def slideshows_off() -> str | None:
+        if slideshows is None:
+            return "slideshow videos aren't set up on this server"
+        if embedder is None:
+            return "slideshow videos need photo search: install it with `pip install -e '.[media]'`"
+        return None
+
+    @app.get("/slideshows")
+    def slideshow_list():
+        reason = slideshows_off()
+        return {
+            "enabled": reason is None,
+            "reason": reason,
+            "jobs": [j.as_dict() for j in slideshows.recent()] if slideshows else [],
+        }
+
+    @app.post("/slideshows", status_code=202)
+    def slideshow_create(q: SlideshowRequest):
+        """Start making a slideshow video of an event. It takes a minute or more: poll `GET /slideshows/{id}`."""
+        reason = slideshows_off()
+        if reason:
+            raise HTTPException(503, reason)
+        try:
+            return slideshows.submit(q.prompt).as_dict()
+        except Busy as err:
+            raise HTTPException(429, str(err)) from err
+
+    @app.get("/slideshows/{job_id}")
+    def slideshow_status(job_id: str):
+        job = slideshows.get(job_id) if slideshows else None
+        if job is None:
+            raise HTTPException(404, "slideshow not found")
+        return job.as_dict()
+
+    @app.get("/slideshows/{job_id}/video")
+    def slideshow_video(job_id: str, download: bool = False):
+        """The finished video. With `download=true` the browser saves it instead of playing it."""
+        job = slideshows.get(job_id) if slideshows else None
+        if job is None:
+            raise HTTPException(404, "slideshow not found")
+        if job.status != DONE or job.path is None or not job.path.is_file():
+            raise HTTPException(409, "the video isn't ready" if job.status != DONE else "the video file is gone")
+        name = re.sub(r"[^a-z0-9]+", "-", (job.found.spec.title if job.found else "slideshow").lower()).strip("-") or "slideshow"
+        return FileResponse(
+            job.path, media_type="video/mp4", filename=f"{name}.mp4" if download else None,
+            content_disposition_type="attachment" if download else "inline",
+        )
 
     @app.get("/metrics")
     def metrics():

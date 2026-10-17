@@ -41,6 +41,7 @@ The agent reads the messages with either Claude or a model running on the same m
 | **Volunteering calendars** | Working | For each volunteering group, such as the preschool P.E. teachers' parents, who is volunteering when and what it involves |
 | **Latest updates** | Planned | The announcements and news worth keeping, in one place |
 | **Photo library** | Working | The school's photos, searchable by describing them ("children eating meals"), across all groups or within one, such as Preschool. See [Photo search](#photo-search) |
+| **Slideshow videos** | Working | Videos made from photos you choose, or that the agent finds from a sentence about the event, in the school's branding. See [Slideshow videos](#slideshow-videos) |
 | **Video library** | Planned | The school's videos, organized so they can be found and reused |
 
 The calendar is the first memory the agent keeps. It reads the messages that [seth-feed](../seth-ingestion) provides from the school's WhatsApp groups, picks out the ones that mention something in the future, and keeps them in a tidy calendar that people or any app can query:
@@ -65,6 +66,7 @@ When plans change, the calendar changes with them. *"The field trip is moved to 
 - [Reading the calendar](#reading-the-calendar)
 - [Photo search](#photo-search)
 - [Flyers](#flyers)
+- [Slideshow videos](#slideshow-videos)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Privacy](#privacy)
@@ -77,7 +79,7 @@ The goal is an agent that holds the school's whole picture, then uses it to do t
 - **Flyers** in the school's branding, made from a sentence. Working today (see [Flyers](#flyers)), with photos from the school's library, a fresh design every time, and, if an image provider is set up, generated artwork.
 - **Weekly newsletters** compiled from the calendar and the latest updates.
 - **An annual yearbook** built from the school's photos, with captions drawn from what the agent knows happened.
-- **Video compilations** of the year's events, assembled from the media it maintains.
+- **Video compilations** of the year's events. Slideshows work today, with photos you choose or that the agent finds for an event (see [Slideshow videos](#slideshow-videos)); including video clips is still to come.
 
 Each new kind of memory is an *extractor* that plugs into the same pipeline, and each new source is a feed. See [Adding a new kind of memory](docs/DEVELOPMENT.md#adding-a-new-kind-of-memory).
 
@@ -212,6 +214,7 @@ Groups are only sorted from now on. Messages the agent has already read stay whe
 | `seth-agent calendar --group "Preschool P.E. Teachers"` | Prints that volunteering group's calendar instead of the school calendar |
 | `seth-agent photos "children eating meals" --group Preschool` | Finds photos by describing them (`--group` is optional). Needs [photo search](#photo-search) |
 | `seth-agent flyer "Open House on 11/7/2026 at 10am - 12pm"` | Makes a flyer in the school's branding and saves it as a PNG. See [Flyers](#flyers) |
+| `seth-agent slideshow "Christmas Program" --photo 48 --photo 60` | Makes a slideshow video from the photos you choose, in the school's branding (`--find` instead of `--photo` finds an event's photos itself). See [Slideshow videos](#slideshow-videos) |
 
 Add `-v` before any command for detailed logs, e.g. `seth-agent -v once`.
 
@@ -219,7 +222,7 @@ All commands live in `.venv/bin/`. To type just `seth-agent`, activate the envir
 
 ## The dashboard
 
-While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard opens on **Status**, which shows whether the agent is up to date and a **Metrics** section: how long it has been running, how many messages each part has read, the events on each calendar, and for photo search, how many photos are indexed and searchable, the model, the storage the embeddings take, which groups the photos come from and how many searches have been answered. After that comes one tab for each kind of memory the agent maintains. Today there are three: the **School calendar**, **Volunteering** and **Media**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. The Media tab is a photo search: type what the photos show, pick a group (Preschool by default, or all groups) and press **Search** to see the best matches as a grid of thumbnails. Click one to enlarge it. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
+While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard opens on **Status**, which shows whether the agent is up to date and a **Metrics** section: how long it has been running, how many messages each part has read, the events on each calendar, and for photo search, how many photos are indexed and searchable, the model, the storage the embeddings take, which groups the photos come from and how many searches have been answered. After that comes one tab for each kind of memory the agent maintains. Today there are three: the **School calendar**, **Volunteering** and **Media**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. The Media tab has two parts. **Generate slideshow video**: describe an event in a sentence ("Christmas Program on 12/12/2026 at school"), press **Generate video**, and the agent finds the photos and makes the video, as `seth-agent slideshow --find` does (see [Slideshow videos](#slideshow-videos)). It takes a minute or two and you can leave the page open; when it is ready you can watch it there, see what the agent understood and which photos it used, and press **Download video**. The page keeps the last ten videos. **Find photos** is a photo search: type what the photos show, pick a group (Preschool by default, or all groups) and press **Search** to see the best matches as a grid of thumbnails. Click one to enlarge it. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
 
 It uses the same look as the [seth-ingestion](../seth-ingestion) dashboard. New memories get their own tab, see [Adding a new kind of memory](docs/DEVELOPMENT.md#adding-a-new-kind-of-memory).
 
@@ -396,6 +399,67 @@ To change how the pictures look, edit the `art` section of [brand/brand.json](br
 
 The layout is [brand/templates/event.html](brand/templates/event.html). To change how flyers look, edit it and look at the result with the command above.
 
+## Slideshow videos
+
+Give the agent photos from the library, or just the event, and it makes a slideshow video in the school's branding. Two ways to choose the photos:
+
+### Let the agent find the photos
+
+```bash
+.venv/bin/seth-agent slideshow "Christmas Program on 12/12/2026 at school" --find
+```
+
+```
+Read from your request: Christmas Program | Saturday, December 12, 2026 | school address
+Looked for: children singing on a stage / families gathered in a room / children in costumes
+Photos sent 2026-12-11 to 2026-12-15.
+Photo #48: Preschool, 2026-12-12, score 0.31
+...
+12 photos, 58 seconds. Watch it before you share it: the photos show children.
+data/slideshows/2026-10-17-christmas-program.mp4
+```
+
+Write the event the way you would for a [flyer](#flyers). The model reads it into the event's name, its date and whether it is at the school, and describes the kinds of photo an album of that event would hold. Then the same CLIP search as [photo search](#photo-search) does the finding:
+
+- **The date limits the search.** When the sentence has a date, only photos sent from the day before to three days after it are looked through, so last year's Christmas program can't turn up. If nothing in that window matches, the command says so. Leave the date out of the sentence to look through every photo.
+- **The video follows the day.** The photos are shown in the order they were sent, not best match first. Burst shots and a photo sent to two groups are used once, and only photos that match well enough are used, so you can get fewer than `--count` (default 12; 2 to 40).
+- **The title, the date line and the address come from the sentence.** The date line under the title is the event's date, and the closing card carries the school's address when it is an event at the school. Say `--subtitle "..."`, `--address` or `--no-address` to decide yourself.
+- **Check what it understood.** The command prints what it read and what it looked for first, then each photo it used. To drop or reorder one, list the photos you want with `--photo` (below).
+- **On the dashboard** the same thing is the Media tab's *Generate slideshow video* box (see [The dashboard](#the-dashboard)). Videos made there are saved in `SETH_SLIDESHOW_DIR` too, but the dashboard keeps only the last ten, deleting older ones, and forgets them when the agent restarts.
+- Photos come from every group by default; limit them with `--photo-group "Preschool"` or `SETH_FLYER_PHOTO_GROUP` (the dashboard uses `SETH_FLYER_PHOTO_GROUP`). This needs [photo search](#photo-search) turned on and the model set up, as for flyers; it uses Claude or the local model for two short questions and the photos never leave this machine.
+
+### Choose the photos yourself
+
+```bash
+.venv/bin/seth-agent slideshow "Christmas Program 2026" --photo 48 --photo 60 --photo 35 \
+  --subtitle "December 12, 2026" --end-text "Thank you for a wonderful year!" --address --music carols.mp3
+```
+
+```
+Photo #48: Preschool, 2026-10-05
+Photo #60: Preschool, 2026-10-04
+Photo #35: Preschool, 2026-10-07
+3 photos, 22 seconds. Watch it before you share it: the photos show children.
+data/slideshows/2026-10-17-christmas-program-2026.mp4
+```
+
+The video is 1920 × 1080 (landscape) MP4, with:
+
+1. a **title card** with the logo, your title and, under it, your subtitle (such as the date);
+2. each **photo**, in the order you gave them, shown whole over a soft blur of itself so any shape of photo fills the screen, drifting in slowly and dissolving into the next;
+3. a **closing card** with the logo for dark backgrounds, your closing line if you gave one, and the school's address if you add `--address` (use it for events held at the school).
+
+Every page carries the school's slogan and the navy, green and gold stripe. The slogan, logo and address come from the [brand kit](brand/README.md), and with `--photo` no model is involved: the title, subtitle and closing line are exactly what you typed. It costs nothing to make one.
+
+- **With `--photo` you choose the photos by id.** Find them in the dashboard's Media tab, or with `seth-agent photos "children on stage"`. The ids come out in the order you give them, so `--photo 48 --photo 60` shows 48 first. A photo that isn't in the library is an error.
+- `--seconds 7` sets how long each photo is shown (2 to 20, default 5). The title and closing cards are 4 seconds each.
+- `--music file` plays any audio file ffmpeg can read under the video, faded in and out and cut to its length (it loops if the video is longer). Use music you have the right to use.
+- `-o file.mp4` chooses where it is saved; the default is `data/slideshows/`.
+- This needs **Google Chrome** (it draws the pages, as it does for flyers) and **ffmpeg**: on a Mac, `brew install ffmpeg`.
+- **Watch the video before you share it.** The photos show children, and the agent can't tell which ones are fine to share.
+
+Not yet: captions on each photo, portrait (phone-shaped) videos, and video clips.
+
 ## Configuration
 
 The defaults match a standard setup, so most people won't need to change anything. To change a setting, set an environment variable before running:
@@ -421,7 +485,9 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_MEDIA_MODEL` | `openai/clip-vit-base-patch16` | The CLIP model that describes photos and searches (a Hugging Face name). Changing it means indexing the photos again |
 | `SETH_BRAND_DIR` | `brand/` in this repo | The [brand kit](brand/README.md) that flyers are made from |
 | `SETH_FLYER_DIR` | `data/flyers/` | Where `seth-agent flyer` saves its PNGs |
-| `SETH_CHROME` | (found automatically) | The Chrome, Chromium or Edge that draws flyers, if it isn't in the usual place |
+| `SETH_CHROME` | (found automatically) | The Chrome, Chromium or Edge that draws flyers and slideshow pages, if it isn't in the usual place |
+| `SETH_SLIDESHOW_DIR` | `data/slideshows/` | Where `seth-agent slideshow` saves its MP4s |
+| `SETH_FFMPEG` | (found automatically) | The ffmpeg that makes slideshow videos, if it isn't on the path |
 | `SETH_FLYER_PHOTO_GROUP` | `all` | The group [flyer photos](#photos) come from, by its exact name. `all` (or empty) means every group |
 | `SETH_FLYER_PHOTO_MIN_SCORE` | `0.25` | How well a photo must match the event to be used (CLIP similarity, about 0.3 for a good match and 0.2 for an unrelated photo). Raise it for fewer, better photos |
 | `SETH_DESIGN_EFFORT` | `low` (local), the model's default (Claude) | How hard the model thinks while designing a flyer: `none`, `low`, `medium` or `high`. A local model needs some thinking to lay a page out |

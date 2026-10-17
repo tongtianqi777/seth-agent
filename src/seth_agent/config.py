@@ -45,6 +45,8 @@ class Config:
     brand_dir: Path
     flyer_dir: Path
     chrome: str | None
+    ffmpeg: str | None
+    slideshow_dir: Path
     image_provider: str
     image_model: str
     image_url: str
@@ -93,6 +95,8 @@ class Config:
             brand_dir=Path(env("SETH_BRAND_DIR", str(REPO_ROOT / "brand"))),
             flyer_dir=Path(env("SETH_FLYER_DIR", str(REPO_ROOT / "data" / "flyers"))),
             chrome=env("SETH_CHROME") or None,
+            ffmpeg=env("SETH_FFMPEG") or None,
+            slideshow_dir=Path(env("SETH_SLIDESHOW_DIR", str(REPO_ROOT / "data" / "slideshows"))),
             image_provider=image_provider,
             image_model=env("SETH_IMAGE_MODEL", "gpt-image-1"),
             image_url=env("SETH_IMAGE_URL", "https://api.openai.com/v1"),
