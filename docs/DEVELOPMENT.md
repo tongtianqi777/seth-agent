@@ -53,7 +53,7 @@ src/seth_agent/
 ├── embeddings.py          The photo model: ClipEmbedder (local CLIP) and the Embedder interface
 ├── media_search.py        Photo search: group lookup, then rank a group's photos against a text query
 ├── api.py                 FastAPI app: /calendar, /volunteering, /events/{id}, /media/search, /metrics, /health, and the dashboard at /
-├── dashboard/             The dashboard: one static index.html (no build step) and the Seth logos
+├── dashboard/             The dashboard: one static index.html (no build step) and copies of the Seth logos (see brand/)
 ├── extractors/
 │   ├── base.py            Extractor interface, TransientError, PermanentError
 │   ├── calendar.py        CalendarExtractor: the school calendar. Prompt, applying operations

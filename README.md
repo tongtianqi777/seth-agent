@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/seth-logo-dark.png">
-    <img src="docs/assets/seth-logo.png" alt="SETH — Christian Education Institute" width="440">
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logos/logo-dark.png">
+    <img src="brand/logos/logo-light.png" alt="SETH — Christian Education Institute" width="440">
   </picture>
 </p>
 
