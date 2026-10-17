@@ -3,6 +3,7 @@
 import threading
 import time
 from datetime import date
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from seth_agent.extractors.base import TransientError
 from seth_agent.flyer import FlyerSpec, PhotoError
 from seth_agent.flyer.photos import Photo
 from seth_agent.llm import Image
+from seth_agent.music import MusicLibrary
 from seth_agent.slideshow import Found, Slideshow, VideoError
 from seth_agent.slideshow.jobs import FAILED, DONE, Busy, SlideshowJobs
 from test_media import FakeEmbedder
@@ -22,11 +24,14 @@ def photo(n):
     return Photo(n, 0.3, "Preschool", f"2026-12-1{n}T10:00:00Z", Image("image/jpeg", b"x"))
 
 
-def fake_make(prompt, out):
+def fake_make(prompt, out, music=None):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(b"not really a video")
     spec = FlyerSpec(title="Christmas Program", event_date=date(2026, 12, 12), at_school=True)
-    return Found(spec, ["children singing"], [photo(1), photo(2)], ("2026-12-11", "2026-12-15")), Slideshow(out, [photo(1), photo(2)], 18.0)
+    found = Found(spec, ["children singing"], [photo(1), photo(2)], ("2026-12-11", "2026-12-15"), "celebratory")
+    track = out.parent / "celebratory.wav" if music == "auto" else None
+    note = "No music: nothing made yet" if music == "Spring Song" else None
+    return found, Slideshow(out, [photo(1), photo(2)], 18.0, track, note)
 
 
 def wait_for(jobs, job, status, timeout=5):
@@ -67,13 +72,13 @@ def test_a_job_is_made_in_the_background_and_describes_the_result(jobs):
 def test_a_failure_is_explained_and_does_not_stop_the_next_job(tmp_path, error, text):
     calls = []
 
-    def make(prompt, out):
+    def make(prompt, out, music=None):
         calls.append(prompt)
         if len(calls) == 1:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"half")
             raise error
-        return fake_make(prompt, out)
+        return fake_make(prompt, out, music)
 
     jobs = SlideshowJobs(make, tmp_path)
     bad = wait_for(jobs, jobs.submit("one"), {FAILED})
@@ -84,10 +89,10 @@ def test_a_failure_is_explained_and_does_not_stop_the_next_job(tmp_path, error, 
 def test_videos_are_made_one_at_a_time_and_too_many_waiting_is_refused(tmp_path):
     release, running = threading.Event(), []
 
-    def make(prompt, out):
+    def make(prompt, out, music=None):
         running.append(prompt)
         assert release.wait(5)
-        return fake_make(prompt, out)
+        return fake_make(prompt, out, music)
 
     jobs = SlideshowJobs(make, tmp_path, max_waiting=2)
     first, second = jobs.submit("a"), jobs.submit("b")
@@ -108,6 +113,15 @@ def test_old_videos_are_deleted_with_their_jobs(tmp_path):
     time.sleep(0.1)
     assert [j.prompt for j in jobs.recent()] == ["3", "2"]
     assert not made[0].path.exists() and not made[1].path.exists() and made[3].path.exists()
+
+
+@pytest.fixture
+def tracks(tmp_path):
+    library = MusicLibrary(tmp_path / "music", Path(__file__).resolve().parent.parent / "brand")
+    library.directory.mkdir()
+    for name in ("celebratory.wav", "Spring Song.mp3"):
+        (library.directory / name).write_bytes(b"x")
+    return library
 
 
 @pytest.fixture
@@ -136,9 +150,9 @@ def test_start_follow_play_and_download(client):
 def test_a_video_that_isnt_ready_or_doesnt_exist(store, source, tmp_path):
     release = threading.Event()
 
-    def slow(prompt, out):
+    def slow(prompt, out, music=None):
         release.wait(5)
-        return fake_make(prompt, out)
+        return fake_make(prompt, out, music)
 
     client = TestClient(create_app(store, source, TZ, embedder=FakeEmbedder(), slideshows=SlideshowJobs(slow, tmp_path)))
     job_id = client.post("/slideshows", json={"prompt": "Picnic"}).json()["id"]
@@ -153,7 +167,7 @@ def test_the_requests_are_checked(client, store, source, tmp_path):
     assert client.post("/slideshows", json={}).status_code == 422
 
     release = threading.Event()
-    jobs = SlideshowJobs(lambda p, o: (release.wait(5), fake_make(p, o))[1], tmp_path, max_waiting=1)
+    jobs = SlideshowJobs(lambda p, o, m=None: (release.wait(5), fake_make(p, o, m))[1], tmp_path, max_waiting=1)
     busy = TestClient(create_app(store, source, TZ, embedder=FakeEmbedder(), slideshows=jobs))
     assert busy.post("/slideshows", json={"prompt": "a"}).status_code == 202
     assert busy.post("/slideshows", json={"prompt": "b"}).status_code == 429
@@ -174,3 +188,49 @@ def test_it_says_when_slideshows_are_unavailable(store, source, jobs):
 def test_the_dashboard_has_the_slideshow_form(client):
     page = client.get("/").text
     assert "Generate slideshow video" in page and 'id="show-prompt"' in page and "Download video" in page
+
+
+def test_the_music_asked_for_is_passed_on_and_reported(store, source, tmp_path, tracks):
+    jobs = SlideshowJobs(fake_make, tmp_path / "videos", music=tracks)
+    client = TestClient(create_app(store, source, TZ, embedder=FakeEmbedder(), slideshows=jobs))
+    listing = client.get("/slideshows").json()["music"]
+    assert listing["tracks"] == ["Spring Song", "celebratory"] and set(listing["moods"]) == {"cheerful", "celebratory", "calm"}
+    assert listing["generate"] is False  # this server was set up without a music generator
+
+    def run(**body):
+        r = client.post("/slideshows", json={"prompt": "Picnic", **body})
+        assert r.status_code == 202, r.text
+        return wait_for(jobs, jobs.get(r.json()["id"]), {DONE}).as_dict()
+
+    auto = run(music="auto")
+    assert auto["music"] == "auto" and auto["music_track"] == "celebratory"
+    assert run()["music"] == "auto" and run(music="")["music"] == "auto"  # music is on unless asked to be off
+    off = run(music="none")
+    assert off["music"] == "none" and off["music_track"] is None
+    named = run(music="spring song")
+    assert named["music"] == "Spring Song"  # the track's own spelling
+    assert named["music_note"] == "No music: nothing made yet"  # what the fake says about that one
+
+
+def test_only_a_track_in_the_folder_can_be_asked_for(store, source, tmp_path, tracks):
+    jobs = SlideshowJobs(fake_make, tmp_path / "videos", music=tracks)
+    client = TestClient(create_app(store, source, TZ, embedder=FakeEmbedder(), slideshows=jobs))
+    for bad in ("polka", "/etc/passwd", "../music/celebratory.wav", "celebratory.wav"):
+        r = client.post("/slideshows", json={"prompt": "Picnic", "music": bad})
+        assert r.status_code == 422 and "Spring Song, celebratory" in r.json()["detail"], bad
+    assert client.get("/slideshows").json()["jobs"] == []  # nothing was started
+
+
+def test_a_music_error_is_explained(tmp_path):
+    from seth_agent.music import MusicError
+
+    def make(prompt, out, music=None):
+        raise MusicError("no track 'polka'")
+
+    jobs = SlideshowJobs(make, tmp_path)
+    assert wait_for(jobs, jobs.submit("x", "polka"), {FAILED}).error == "music: no track 'polka'"
+
+
+def test_the_dashboard_has_the_music_choice(client):
+    page = client.get("/").text
+    assert 'id="show-music"' in page and "Automatic (suits the event)" in page and "No music" in page

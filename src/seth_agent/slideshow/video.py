@@ -71,11 +71,11 @@ def build_command(
     if music:
         cmd += ["-stream_loop", "-1", "-i", str(music)]
         parts.append(
-            f"[{len(slides)}:a]atrim=0:{length:.3f},afade=t=in:d=2,afade=t=out:st={max(0.0, length - 3):.3f}:d=3[a]"
+            f"[{len(slides)}:a]atrim=0:{length:.3f},loudnorm=I=-20:TP=-2:LRA=7,afade=t=in:d=2,afade=t=out:st={max(0.0, length - 3):.3f}:d=3[a]"
         )
     cmd += ["-filter_complex", ";".join(parts), "-map", f"[{last}]"]
     if music:
-        cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+        cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "192k", "-ac", "2"]
     cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-movflags", "+faststart", "-t", f"{length:.3f}", str(out)]
     return cmd
 

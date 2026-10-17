@@ -1,4 +1,4 @@
-"""seth-agent command line: run | once | calendar | photos | flyer | slideshow."""
+"""seth-agent command line: run | once | calendar | photos | flyer | slideshow | music."""
 
 from __future__ import annotations
 
@@ -60,7 +60,13 @@ def main(argv: list[str] | None = None) -> None:
     address.add_argument("--address", dest="address", action="store_true", default=None, help="print the school's address on the last card (with --find, that is decided from the sentence unless you say)")
     address.add_argument("--no-address", dest="address", action="store_false", help="leave the school's address off")
     show.add_argument("--seconds", type=float, default=5.0, help="seconds each photo is shown (2-20, default 5)")
-    show.add_argument("--music", type=Path, help="an audio file to play under the video")
+    sound = show.add_mutually_exclusive_group()
+    sound.add_argument("--music", help="music under the video: 'auto' (the default with --find) for music that suits the event, made on this computer the first time it is needed; the name of a track in the music folder (see `seth-agent music list`); or the path to an audio file. With --photo there is no music unless you name it")
+    sound.add_argument("--no-music", action="store_true", help="no music, even with --find")
+    music = sub.add_parser("music", help="make background music for slideshow videos, or list what there is")
+    music.add_argument("action", choices=["generate", "list"], help="generate: make a track for each mood that has none yet (on this machine, the first time downloads the model); list: show the tracks and moods")
+    music.add_argument("moods", nargs="*", help="with generate, only these moods (default: every mood without a track)")
+    music.add_argument("--force", action="store_true", help="with generate, make a new take of a mood that already has a track, replacing it")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -84,6 +90,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "slideshow":
         _make_slideshow(config, args)
+        return
+
+    if args.command == "music":
+        _music(config, args)
         return
 
     from .agent import build_agent
@@ -185,6 +195,8 @@ def _slideshow_jobs(config: Config, agent):
     """The dashboard's slideshow videos: made in the background, one at a time, from a sentence about the event."""
     from .flyer import PhotoLibrary
     from .llm import build_llm
+    from .music import MusicChoice, MusicLibrary
+    from .music.musicgen import MusicGen
     from .slideshow import make_from_request
     from .slideshow.jobs import SlideshowJobs
 
@@ -193,11 +205,15 @@ def _slideshow_jobs(config: Config, agent):
         agent.store, agent.source, agent.embedder, config.flyer_photo_group, config.flyer_photo_min_score, max_side=1920
     )
 
-    def make(prompt: str, out: Path):
-        today = datetime.now(config.tz).date()
-        return make_from_request(llm, library, prompt, config.brand_dir, today, out, chrome=config.chrome, ffmpeg=config.ffmpeg)
+    tracks = MusicLibrary(config.music_dir, config.brand_dir)
+    generator = MusicGen(config.music_model)  # loads on first use
 
-    return SlideshowJobs(make, config.slideshow_dir)
+    def make(prompt: str, out: Path, music: str | None):
+        today = datetime.now(config.tz).date()
+        choice = MusicChoice(tracks, music, generator=generator)
+        return make_from_request(llm, library, prompt, config.brand_dir, today, out, music=choice, chrome=config.chrome, ffmpeg=config.ffmpeg)
+
+    return SlideshowJobs(make, config.slideshow_dir, music=tracks, can_generate_music=True)
 
 
 def _make_slideshow(config: Config, args: argparse.Namespace) -> None:
@@ -207,10 +223,16 @@ def _make_slideshow(config: Config, args: argparse.Namespace) -> None:
     from .flyer import FlyerError, PhotoError
     from .flyer.template import format_date
     from .llm import build_llm
+    from .music import AUTO, NONE, MusicChoice, MusicError, MusicLibrary
+    from .music.musicgen import MusicGen
     from .slideshow import VideoError, make_from_request, make_slideshow
 
     today = datetime.now(config.tz).date()
     found = None
+    wanted = NONE if args.no_music else args.music or (AUTO if args.find else NONE)  # music is on with --find unless turned off
+    music = MusicChoice(MusicLibrary(config.music_dir, config.brand_dir), wanted, True, MusicGen(config.music_model))
+    if music.moods() and not args.find:
+        raise SystemExit("--music auto reads the mood from the event, so it needs --find; name a track instead (`seth-agent music list`)")
 
     def default_output(title: str) -> Path:
         slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "slideshow"
@@ -222,13 +244,16 @@ def _make_slideshow(config: Config, args: argparse.Namespace) -> None:
         if args.find:
             found, show = make_from_request(
                 build_llm(config), library, args.title, config.brand_dir, today, default_output, args.count,
-                args.subtitle, args.end_text, args.address, args.seconds, args.music, config.chrome, config.ffmpeg,
+                args.subtitle, args.end_text, args.address, args.seconds, music, config.chrome, config.ffmpeg,
             )  # fmt: skip
         else:
+            track = music.pick()
             show = make_slideshow(
                 args.title, library.get(args.photo_ids), default_output(args.title), config.brand_dir, args.subtitle,
-                args.end_text, bool(args.address), args.seconds, args.music, config.chrome, config.ffmpeg,
+                args.end_text, bool(args.address), args.seconds, track.path, config.chrome, config.ffmpeg,
             )  # fmt: skip
+    except MusicError as e:
+        raise SystemExit(f"music: {e}")
     except PhotoError as e:
         raise SystemExit(f"photos: {e}")
     except OSError as e:
@@ -251,8 +276,40 @@ def _make_slideshow(config: Config, args: argparse.Namespace) -> None:
         print(f"Photo #{p.file_id}: {p.group}, {p.sent_at[:10]}{how}")
     if found:
         print("  Don't like one? Leave it out by listing the photos you want with --photo ID, in order.")
+    if show.music:
+        print(f"Music: {show.music.stem}" + (f" (the {found.mood} mood suits this event)" if found and found.mood else ""))
+    elif show.music_note:
+        print(show.music_note)
     print(f"{len(show.photos)} photos, {show.seconds:.0f} seconds. Watch it before you share it: the photos show children.")
     print(show.path)
+
+
+def _music(config: Config, args: argparse.Namespace) -> None:
+    from .music import MusicError, MusicLibrary
+    from .music.musicgen import MusicGen, MusicGenError
+
+    library = MusicLibrary(config.music_dir, config.brand_dir)
+    if args.action == "list":
+        tracks = library.tracks()
+        print(f"Tracks in {config.music_dir}: " + (", ".join(tracks) if tracks else "none yet"))
+        for mood, use in library.moods().items():
+            print(f"  {mood}: {use}" + ("" if mood in library.missing() else "  [made]"))
+        if library.missing():
+            print("Make the missing moods with `seth-agent music generate`.")
+        return
+    moods = args.moods or (list(library.moods()) if args.force else library.missing())
+    if not moods:
+        print("Every mood already has a track. Use --force to make a new take of one.")
+        return
+    generator = MusicGen(config.music_model)
+    for mood in moods:
+        print(f"Making {mood} music (under a minute; the first time also downloads the model)...", flush=True)
+        try:
+            path = library.generate(generator, mood, args.force)
+        except (MusicError, MusicGenError) as e:
+            raise SystemExit(f"music: {e}")
+        print(f"  {path}")
+    print("Listen to them before the school uses them. `seth-agent slideshow ... --music auto` picks one to suit the event.")
 
 
 def _photo_library(config: Config, group: str | None, searching: bool, max_side: int | None = None):

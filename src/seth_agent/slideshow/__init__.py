@@ -20,6 +20,7 @@ from ..flyer.photos import Photo, PhotoLibrary
 from ..flyer.render import render_png
 from ..flyer.template import format_date
 from ..llm import LLM
+from ..music import MusicChoice
 from . import slides
 from .find import Found, find_photos
 from .video import FADE, VideoError, make_video, total_seconds
@@ -36,6 +37,8 @@ class Slideshow:
     path: Path
     photos: list[Photo]
     seconds: float  # how long the video runs
+    music: Path | None = None  # the track playing under it
+    music_note: str | None = None  # why there is no music, when the person asked for some
 
 
 def make_slideshow(
@@ -77,7 +80,7 @@ def make_slideshow(
         with ThreadPoolExecutor(max_workers=4) as pool:  # each page is its own Chrome, so a few at a time
             list(pool.map(lambda job: render_png(job[0], job[1], chrome, size), zip(pages, pictures)))
         make_video(pictures, durations, out, ffmpeg, music, size)
-    return Slideshow(out, list(photos), total_seconds(durations, FADE))
+    return Slideshow(out, list(photos), total_seconds(durations, FADE), Path(music) if music else None)
 
 
 def make_from_request(
@@ -92,7 +95,7 @@ def make_from_request(
     end_text: str | None = None,
     address: bool | None = None,
     seconds_per_photo: float = 5.0,
-    music: Path | None = None,
+    music: MusicChoice | None = None,
     chrome: str | None = None,
     ffmpeg: str | None = None,
 ) -> tuple[Found, Slideshow]:
@@ -100,15 +103,20 @@ def make_from_request(
 
     The title comes from the request. The date line under it is the event's date unless `subtitle` says otherwise, and
     the closing card carries the school's address when the request is for something at the school (`address`
-    overrides that). `out` is where to save the MP4, or a function that picks the path from the title.
+    overrides that). `out` is where to save the MP4, or a function that picks the path from the title. `music` is what
+    the person asked for: a track, or `auto` to have the model pick the mood that suits the event. A track that
+    isn't there is an error before any work is done.
     """
-    found = find_photos(llm, library, request, today, count)
+    early = music.pick() if music and not music.moods() else None  # a wrong track name should fail now, not after the work
+    found = find_photos(llm, library, request, today, count, music.moods() if music else None)
+    pick = early or (music.pick(found.mood) if music else None)
     spec = found.spec
     if subtitle is None and spec.event_date:
         subtitle = format_date(spec.event_date)
     path = out(spec.title) if callable(out) else out
     show = make_slideshow(
         spec.title, found.photos, path, brand_dir, subtitle, end_text,
-        spec.at_school if address is None else address, seconds_per_photo, music, chrome, ffmpeg,
+        spec.at_school if address is None else address, seconds_per_photo, pick.path if pick else None, chrome, ffmpeg,
     )  # fmt: skip
+    show.music_note = pick.note if pick else None
     return found, show

@@ -77,7 +77,8 @@ def test_music_is_looped_faded_and_cut_to_the_video():
     assert cmd[cmd.index("-stream_loop") + 1] == "-1"
     graph = cmd[cmd.index("-filter_complex") + 1]
     assert "[2:a]atrim=0:7.000" in graph and "afade=t=out:st=4.000" in graph
-    assert "aac" in cmd
+    assert "loudnorm" in graph and graph.index("loudnorm") < graph.index("afade")  # levelled, then faded
+    assert "aac" in cmd and cmd[cmd.index("-ac") + 1] == "2"
 
 
 def test_a_video_needs_slides():

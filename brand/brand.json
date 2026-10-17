@@ -52,6 +52,25 @@
     "composition": "Decorative artwork that frames the page: the interest sits along the edges, corners and bottom. The middle of the page and the top where the logo goes are calm, open, light cream space.",
     "avoid": "Any text, letters, numbers, logos, signs or banners with writing. Faces and recognizable people (use silhouettes, hands or objects instead). Crosses and religious symbols other than what the request names. Dark or busy backgrounds."
   },
+  "music": {
+    "style": "Instrumental only: no vocals, no lyrics, no singing, no choir, no spoken words. Warm, gentle and wholesome, suited to a school and its families. Steady and unobtrusive, as background under photos. Never imitating a known song or artist.",
+    "prompt_suffix": "instrumental only, no vocals",
+    "default_mood": "cheerful",
+    "moods": {
+      "cheerful": {
+        "use": "Everyday school life, classes, play, picnics, field trips, field days, ordinary days.",
+        "prompt": "gentle acoustic guitar, soft piano and light percussion, warm and cheerful, relaxed upbeat tempo, background music for a children's school video"
+      },
+      "celebratory": {
+        "use": "Programs, concerts, performances, graduations, holidays, parties and other celebrations.",
+        "prompt": "festive and joyful, bright piano, strings and glockenspiel, uplifting, celebratory, warm orchestral pop, background music for a school celebration video"
+      },
+      "calm": {
+        "use": "Quiet or reflective videos: a year in review, chapel, thanksgiving, remembering, anything gentle.",
+        "prompt": "soft piano and warm strings, slow, peaceful and reflective, tender and hopeful, ambient, background music for a gentle school memories video"
+      }
+    }
+  },
   "motifs": {
     "bunting": {
       "file": "motifs/bunting.svg",

@@ -279,13 +279,26 @@ curl -s http://127.0.0.1:8765/slideshows \
 }
 ```
 
-**Request body** (JSON): `prompt`, the event in a sentence, 1 to 300 characters. Leave the date out to look through every photo.
+**Request body** (JSON)
 
-**Errors:** `422` for a blank or too long `prompt`. `429` when three videos are already waiting or being made. `503` when photo search or slideshows aren't set up.
+| Field | Default | Description |
+|---|---|---|
+| `prompt` | required | The event in a sentence, 1 to 300 characters. Leave the date out to look through every photo |
+| `music` | `"auto"` | `"auto"`: instrumental music that suits the event (the model picks one of the moods in `music.moods`; its track is made on this computer the first time it is needed, which adds about half a minute once, and a 2 GB model download the very first time). `"none"`: no music. Or the name of a track from `music.tracks` in `GET /slideshows` (case doesn't matter). Never a path |
+
+**Errors:** `422` for a blank or too long `prompt`, or a `music` that isn't `auto`, `none` or a track's name (the message lists the tracks). `429` when three videos are already waiting or being made. `503` when photo search or slideshows aren't set up.
 
 ## `GET /slideshows`
 
-The most recent ten jobs, newest first, with whether slideshows are available: `{"enabled": true, "reason": null, "jobs": [...]}`. When `enabled` is `false`, `reason` says why (and `jobs` is empty).
+The most recent ten jobs, newest first, with whether slideshows are available and what music can be asked for:
+
+```json
+{ "enabled": true, "reason": null, "jobs": [ ... ],
+  "music": { "generate": true, "tracks": ["calm", "celebratory", "cheerful"],
+             "moods": { "cheerful": "Everyday school life, ...", "celebratory": "...", "calm": "..." } } }
+```
+
+When `enabled` is `false`, `reason` says why (and `jobs` is empty). `music.generate` says whether `auto` can make music that doesn't exist yet; `music.tracks` are the tracks in the music folder, made or added.
 
 `GET /slideshows/{id}` returns one job. Videos are made one at a time, in the order they were asked for. A job's fields:
 
@@ -295,6 +308,9 @@ The most recent ten jobs, newest first, with whether slideshows are available: `
 | `error` | Why it failed, in words for a person, when `status` is `failed` |
 | `title`, `event_date`, `at_school` | What the model understood from the sentence (once the video is made) |
 | `queries` | What it looked for in the photos |
+| `music` | What was asked for: `auto`, `none` or a track's name |
+| `music_track` | The track that plays, once the video is made, or `null` |
+| `music_note` | Why there is no music when `auto` was asked for (it couldn't be made), otherwise `null` |
 | `window` | The two days (`YYYY-MM-DD`, both included) the photos were taken from, when the sentence had a date, otherwise `null` |
 | `photos[]` | The photos in the video, in the order shown: `file_id` (see [`GET /media/{id}`](#get-mediaid)), `group`, `sent_at` |
 | `seconds` | How long the video runs |
