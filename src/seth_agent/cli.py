@@ -55,7 +55,12 @@ def main(argv: list[str] | None = None) -> None:
     poller = threading.Thread(target=agent.run_forever, args=(config.poll_seconds, stop), name="poller", daemon=True)
     poller.start()
     try:
-        uvicorn.run(create_app(agent.store, agent.source, config.tz, config.volunteering), host=config.api_host, port=config.api_port)
+        uvicorn.run(
+            create_app(agent.store, agent.source, config.tz, config.volunteering),
+            host=config.api_host,
+            port=config.api_port,
+            access_log=args.verbose,  # per-request dashboard lines are noise unless -v
+        )
     finally:
         stop.set()
         poller.join(timeout=5)
