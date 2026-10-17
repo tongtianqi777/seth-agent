@@ -19,13 +19,14 @@ from typing import Callable
 
 from ..extractors.base import PermanentError, TransientError
 from ..flyer import FlyerError, PhotoError
+from ..music import MusicError, MusicLibrary
 from . import Found, Slideshow, VideoError
 
 log = logging.getLogger(__name__)
 
 QUEUED, RUNNING, DONE, FAILED = "queued", "running", "done", "failed"
 
-Maker = Callable[[str, Path], tuple[Found, Slideshow]]  # (the request, where to save the MP4)
+Maker = Callable[[str, Path, str | None], tuple[Found, Slideshow]]  # (the request, where to save the MP4, the music chosen)
 
 
 class Busy(Exception):
@@ -38,6 +39,8 @@ def now() -> str:
 
 def describe(e: Exception) -> str:
     """What went wrong, in words for the person who asked."""
+    if isinstance(e, MusicError):
+        return f"music: {e}"
     if isinstance(e, PhotoError):
         return f"photos: {e}"
     if isinstance(e, TransientError):
@@ -61,6 +64,7 @@ class Job:
     error: str | None = None
     path: Path | None = None
     number: int = 0  # the order jobs were asked for in
+    music: str | None = None  # what was asked for: none, `auto` or a track's name
 
     def as_dict(self) -> dict:
         f, show = self.found, self.show
@@ -79,26 +83,39 @@ class Job:
             "window": list(f.window) if f and f.window else None,
             "photos": [{"file_id": p.file_id, "group": p.group, "sent_at": p.sent_at} for p in f.photos] if f else [],
             "seconds": round(show.seconds, 1) if show else None,
+            "music": self.music,
+            "music_track": show.music.stem if show and show.music else None,
+            "music_note": show.music_note if show else None,
             "video_url": f"/slideshows/{self.id}/video" if self.status == DONE else None,
         }
 
 
 class SlideshowJobs:
-    def __init__(self, make: Maker, directory: Path, keep: int = 10, max_waiting: int = 3):
+    def __init__(
+        self,
+        make: Maker,
+        directory: Path,
+        keep: int = 10,
+        max_waiting: int = 3,
+        music: MusicLibrary | None = None,
+        can_generate_music: bool = False,
+    ):
         self.make, self.directory, self.keep, self.max_waiting = make, Path(directory), keep, max_waiting
+        self.music = music  # the tracks that can be asked for
+        self.can_generate_music = can_generate_music  # whether `auto` makes music that doesn't exist yet
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
         self._queue: queue.Queue[Job] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._count = 0
 
-    def submit(self, prompt: str) -> Job:
+    def submit(self, prompt: str, music: str | None = None) -> Job:
         """Queue a video. Raises Busy when `max_waiting` are already waiting or being made."""
         with self._lock:
             if sum(j.status in (QUEUED, RUNNING) for j in self._jobs.values()) >= self.max_waiting:
                 raise Busy(f"{self.max_waiting} videos are already being made; wait for one to finish")
             self._count += 1
-            job = Job(uuid.uuid4().hex[:12], prompt, number=self._count)
+            job = Job(uuid.uuid4().hex[:12], prompt, number=self._count, music=music)
             self._jobs[job.id] = job
             if self._worker is None:
                 self._worker = threading.Thread(target=self._work, name="slideshows", daemon=True)
@@ -122,10 +139,10 @@ class SlideshowJobs:
                 job.status = RUNNING
             path = self.directory / f"{job.id}.mp4"
             try:
-                found, show = self.make(job.prompt, path)
+                found, show = self.make(job.prompt, path, job.music)
             except Exception as e:  # a job must never take the worker down
                 path.unlink(missing_ok=True)  # no half-made video
-                if not isinstance(e, (PhotoError, TransientError, PermanentError, VideoError, FlyerError, OSError)):
+                if not isinstance(e, (MusicError, PhotoError, TransientError, PermanentError, VideoError, FlyerError, OSError)):
                     log.exception("slideshow %s failed", job.id)
                 with self._lock:
                     job.status, job.error, job.finished_at = FAILED, describe(e), now()

@@ -44,6 +44,10 @@ class SlideshowRequest(BaseModel):
         max_length=300,
         description="The event, in a sentence, e.g. 'Christmas Program on 12/12/2026 at school'. The agent finds its photos",
     )
+    music: str | None = Field(
+        None,
+        description="Music under the video: 'auto' (the default) for music that suits the event, 'none' for no music, or a track's name from `GET /slideshows`",
+    )
 
     @field_validator("prompt")
     @classmethod
@@ -170,6 +174,11 @@ def create_app(
             "enabled": reason is None,
             "reason": reason,
             "jobs": [j.as_dict() for j in slideshows.recent()] if slideshows else [],
+            "music": {
+                "generate": bool(slideshows and slideshows.can_generate_music),
+                "tracks": slideshows.music.tracks() if slideshows and slideshows.music else [],
+                "moods": slideshows.music.moods() if slideshows and slideshows.music else {},
+            },
         }
 
     @app.post("/slideshows", status_code=202)
@@ -178,8 +187,15 @@ def create_app(
         reason = slideshows_off()
         if reason:
             raise HTTPException(503, reason)
+        music = (q.music or "").strip() or "auto"  # music is on unless the caller says "none"
+        if music.casefold() not in ("none", "auto"):
+            tracks = slideshows.music.tracks() if slideshows.music else []
+            match = next((t for t in tracks if t.casefold() == music.casefold()), None)
+            if match is None:  # only a track in the music folder, never a path
+                raise HTTPException(422, f"no music track {music!r}; the tracks are: {', '.join(tracks) or 'none yet'}")
+            music = match
         try:
-            return slideshows.submit(q.prompt).as_dict()
+            return slideshows.submit(q.prompt, music).as_dict()
         except Busy as err:
             raise HTTPException(429, str(err)) from err
 

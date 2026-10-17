@@ -28,6 +28,7 @@ class PhotoBrief(BaseModel):
         max_length=MAX_QUERIES,
         description="Three to five short descriptions of photos an album of this event would hold, each a different kind of photo",
     )
+    mood: str | None = Field(None, description="The mood of music that suits the event, one of the moods listed, only when asked for")
 
 
 BRIEF_SYSTEM = """\
@@ -39,27 +40,39 @@ You choose photos for a slideshow video of an event at Seth Christian Education 
 """
 
 
+MOOD_SYSTEM = """
+Also choose the mood of background music for the video, as `mood`: exactly one of these, whichever suits the event best.
+{moods}
+"""
+
+
 @dataclass
 class Found:
     spec: FlyerSpec
     queries: list[str]
     photos: list[Photo]  # in the order they were sent
     window: tuple[str, str] | None  # the days they were searched in, when the sentence had a date
+    mood: str | None = None  # the music mood that suits it, when the person asked for music to match
 
 
-def plan_queries(llm: LLM, spec: FlyerSpec, request: str) -> list[str]:
-    brief = llm.parse(BRIEF_SYSTEM, f"Event: {spec.title}\nThe request, in the person's words: {request.strip()}", PhotoBrief)
-    return [q.strip()[:100] for q in brief.queries if q.strip()][:MAX_QUERIES]
+def plan_queries(llm: LLM, spec: FlyerSpec, request: str, moods: dict[str, str] | None = None) -> tuple[list[str], str | None]:
+    """What to look for in the photos, and (when `moods` is given) which of them suits the event's music."""
+    system = BRIEF_SYSTEM + (MOOD_SYSTEM.format(moods="\n".join(f"- {m}: {use}" for m, use in moods.items())) if moods else "")
+    brief = llm.parse(system, f"Event: {spec.title}\nThe request, in the person's words: {request.strip()}", PhotoBrief)
+    mood = brief.mood.strip().casefold() if brief.mood else None
+    return [q.strip()[:100] for q in brief.queries if q.strip()][:MAX_QUERIES], mood if moods and mood in moods else None
 
 
 def event_window(event_date: date) -> tuple[str, str]:
     return (event_date - timedelta(days=DAYS_BEFORE)).isoformat(), (event_date + timedelta(days=DAYS_AFTER)).isoformat()
 
 
-def find_photos(llm: LLM, library: PhotoLibrary, request: str, today: date, count: int = 12) -> Found:
+def find_photos(
+    llm: LLM, library: PhotoLibrary, request: str, today: date, count: int = 12, moods: dict[str, str] | None = None
+) -> Found:
     """Read `request` and find up to `count` photos for it. Raises PhotoError when there are none to show."""
     spec = extract_spec(llm, request, today)
-    queries = plan_queries(llm, spec, request)
+    queries, mood = plan_queries(llm, spec, request, moods)
     if not queries:
         raise PhotoError("the model didn't say what to look for; try describing the event more")
     window = event_window(spec.event_date) if spec.event_date else None
@@ -68,4 +81,4 @@ def find_photos(llm: LLM, library: PhotoLibrary, request: str, today: date, coun
         where = f" sent between {window[0]} and {window[1]}" if window else ""
         hint = " (leave the date out of the request to look through every photo, or choose photos with --photo)" if window else ""
         raise PhotoError(f"no photos{where} match {spec.title!r} well enough{hint}")
-    return Found(spec, queries, sorted(photos, key=lambda p: p.sent_at), window)
+    return Found(spec, queries, sorted(photos, key=lambda p: p.sent_at), window, mood)

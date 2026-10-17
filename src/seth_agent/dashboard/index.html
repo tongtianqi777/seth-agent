@@ -273,8 +273,12 @@
         <label class="q">Event
           <input id="show-prompt" type="text" maxlength="300" placeholder="e.g. Christmas Program on 12/12/2026 at school" autocomplete="off" required>
         </label>
+        <label>Music
+          <select id="show-music"><option value="none">No music</option></select>
+        </label>
         <button id="show-go" class="go" type="submit">Generate video</button>
       </form>
+      <p class="note" id="show-music-note" hidden>Automatic music is instrumental, made on this computer to suit the event, and kept for next time. The first time each kind is needed it takes a little longer (and the very first time downloads the music model, about 2 GB). Choose <b>No music</b> to leave it out.</p>
       <div class="error" id="show-error" hidden></div>
       <div class="warning" id="show-warning" hidden></div>
       <div class="jobs" id="show-jobs" aria-live="polite"></div>
@@ -857,7 +861,7 @@ const volunteering = createCalendar($("vol-calendar"), {
 const slideshows = (() => {
   const LABEL = { queued: ["Waiting", "warn"], running: ["Making the video", "warn"], done: ["Ready", "ok"], failed: ["Failed", "bad"] };
   const cards = new Map(); // job id -> {key, node}, so an unchanged job keeps its <video> while others update
-  let enabled = true, timer = null, loaded = false;
+  let enabled = true, timer = null, loaded = false, musicKey = "", musicChoice = null;
 
   function showError(text) {
     $("show-error").hidden = !text;
@@ -869,6 +873,28 @@ const slideshows = (() => {
     row.append(el("b", null, label + " "), text);
     return row;
   }
+
+  // The music choices: none, automatic (the agent picks the mood that suits the event), then each track.
+  // Until the user picks, automatic is the choice when there are tracks.
+  function setMusic(music) {
+    const key = JSON.stringify(music);
+    if (key !== musicKey) {
+      musicKey = key;
+      const select = $("show-music");
+      const auto = music.generate || music.tracks.length > 0; // made on demand, or already made
+      const options = [];
+      if (auto) options.push(new Option("Automatic (suits the event)", "auto"));
+      options.push(new Option("No music", "none"), ...music.tracks.map((t) => new Option(t, t)));
+      select.replaceChildren(...options);
+      const want = musicChoice === null ? (auto ? "auto" : "none") : musicChoice;
+      select.value = [...select.options].some((o) => o.value === want) ? want : "none";
+    }
+    showMusicNote();
+  }
+  function showMusicNote() {
+    $("show-music-note").hidden = !(musicKey && JSON.parse(musicKey).generate && $("show-music").value === "auto");
+  }
+  $("show-music").onchange = (e) => { musicChoice = e.target.value; showMusicNote(); };
 
   function card(j) {
     const node = el("article", "job");
@@ -900,6 +926,8 @@ const slideshows = (() => {
       const facts = el("div", "facts");
       facts.append(fact("Understood as:", [j.title, j.event_date && fmtDay(j.event_date, { weekday: "long", month: "long", day: "numeric", year: "numeric" }), j.at_school && "at the school"].filter(Boolean).join(" · ")));
       if (j.queries.length) facts.append(fact("Looked for:", j.queries.join(" / ")));
+      if (j.music_track) facts.append(fact("Music:", j.music_track));
+      else if (j.music_note) facts.append(fact("Music:", j.music_note));
       if (j.window) facts.append(fact("Photos from:", `${fmtDay(j.window[0], { month: "short", day: "numeric" })} to ${fmtDay(j.window[1], { month: "short", day: "numeric", year: "numeric" })}`));
       node.append(facts);
       const thumbs = el("div", "thumbs");
@@ -938,6 +966,7 @@ const slideshows = (() => {
       $("show-warning").hidden = enabled;
       $("show-warning").textContent = res.reason || "";
       $("show-go").disabled = !enabled;
+      setMusic(res.music);
       render(res.jobs);
       loaded = true;
       if (res.jobs.some((j) => j.status === "queued" || j.status === "running")) timer = setTimeout(refresh, 2000);
@@ -955,7 +984,7 @@ const slideshows = (() => {
     go.disabled = true;
     showError("");
     try {
-      await api("slideshows", { prompt });
+      await api("slideshows", { prompt, music: $("show-music").value });
       $("show-prompt").value = "";
       await refresh();
     } catch (err) {

@@ -47,6 +47,8 @@ class Config:
     chrome: str | None
     ffmpeg: str | None
     slideshow_dir: Path
+    music_dir: Path
+    music_model: str
     image_provider: str
     image_model: str
     image_url: str
@@ -97,6 +99,8 @@ class Config:
             chrome=env("SETH_CHROME") or None,
             ffmpeg=env("SETH_FFMPEG") or None,
             slideshow_dir=Path(env("SETH_SLIDESHOW_DIR", str(REPO_ROOT / "data" / "slideshows"))),
+            music_dir=Path(env("SETH_MUSIC_DIR", str(REPO_ROOT / "data" / "music"))),
+            music_model=env("SETH_MUSIC_MODEL", "facebook/musicgen-small"),
             image_provider=image_provider,
             image_model=env("SETH_IMAGE_MODEL", "gpt-image-1"),
             image_url=env("SETH_IMAGE_URL", "https://api.openai.com/v1"),

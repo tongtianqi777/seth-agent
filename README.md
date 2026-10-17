@@ -222,7 +222,7 @@ All commands live in `.venv/bin/`. To type just `seth-agent`, activate the envir
 
 ## The dashboard
 
-While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard opens on **Status**, which shows whether the agent is up to date and a **Metrics** section: how long it has been running, how many messages each part has read, the events on each calendar, and for photo search, how many photos are indexed and searchable, the model, the storage the embeddings take, which groups the photos come from and how many searches have been answered. After that comes one tab for each kind of memory the agent maintains. Today there are three: the **School calendar**, **Volunteering** and **Media**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. The Media tab has two parts. **Generate slideshow video**: describe an event in a sentence ("Christmas Program on 12/12/2026 at school"), press **Generate video**, and the agent finds the photos and makes the video, as `seth-agent slideshow --find` does (see [Slideshow videos](#slideshow-videos)). It takes a minute or two and you can leave the page open; when it is ready you can watch it there, see what the agent understood and which photos it used, and press **Download video**. The page keeps the last ten videos. **Find photos** is a photo search: type what the photos show, pick a group (Preschool by default, or all groups) and press **Search** to see the best matches as a grid of thumbnails. Click one to enlarge it. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
+While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard opens on **Status**, which shows whether the agent is up to date and a **Metrics** section: how long it has been running, how many messages each part has read, the events on each calendar, and for photo search, how many photos are indexed and searchable, the model, the storage the embeddings take, which groups the photos come from and how many searches have been answered. After that comes one tab for each kind of memory the agent maintains. Today there are three: the **School calendar**, **Volunteering** and **Media**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. The Media tab has two parts. **Generate slideshow video**: describe an event in a sentence ("Christmas Program on 12/12/2026 at school"), press **Generate video**, and the agent finds the photos and makes the video, as `seth-agent slideshow --find` does (see [Slideshow videos](#slideshow-videos)). It takes a minute or two and you can leave the page open; when it is ready you can watch it there, see what the agent understood and which photos it used, and press **Download video**. The **Music** menu next to the event box is *Automatic* by default (music made to suit the event); choose **No music** to leave it out, or pick a track. The page keeps the last ten videos. **Find photos** is a photo search: type what the photos show, pick a group (Preschool by default, or all groups) and press **Search** to see the best matches as a grid of thumbnails. Click one to enlarge it. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
 
 It uses the same look as the [seth-ingestion](../seth-ingestion) dashboard. New memories get their own tab, see [Adding a new kind of memory](docs/DEVELOPMENT.md#adding-a-new-kind-of-memory).
 
@@ -425,14 +425,14 @@ Write the event the way you would for a [flyer](#flyers). The model reads it int
 - **The video follows the day.** The photos are shown in the order they were sent, not best match first. Burst shots and a photo sent to two groups are used once, and only photos that match well enough are used, so you can get fewer than `--count` (default 12; 2 to 40).
 - **The title, the date line and the address come from the sentence.** The date line under the title is the event's date, and the closing card carries the school's address when it is an event at the school. Say `--subtitle "..."`, `--address` or `--no-address` to decide yourself.
 - **Check what it understood.** The command prints what it read and what it looked for first, then each photo it used. To drop or reorder one, list the photos you want with `--photo` (below).
-- **On the dashboard** the same thing is the Media tab's *Generate slideshow video* box (see [The dashboard](#the-dashboard)). Videos made there are saved in `SETH_SLIDESHOW_DIR` too, but the dashboard keeps only the last ten, deleting older ones, and forgets them when the agent restarts.
+- **On the dashboard** the same thing, with the same music choice, is the Media tab's *Generate slideshow video* box (see [The dashboard](#the-dashboard)). Videos made there are saved in `SETH_SLIDESHOW_DIR` too, but the dashboard keeps only the last ten, deleting older ones, and forgets them when the agent restarts.
 - Photos come from every group by default; limit them with `--photo-group "Preschool"` or `SETH_FLYER_PHOTO_GROUP` (the dashboard uses `SETH_FLYER_PHOTO_GROUP`). This needs [photo search](#photo-search) turned on and the model set up, as for flyers; it uses Claude or the local model for two short questions and the photos never leave this machine.
 
 ### Choose the photos yourself
 
 ```bash
 .venv/bin/seth-agent slideshow "Christmas Program 2026" --photo 48 --photo 60 --photo 35 \
-  --subtitle "December 12, 2026" --end-text "Thank you for a wonderful year!" --address --music carols.mp3
+  --subtitle "December 12, 2026" --end-text "Thank you for a wonderful year!" --address
 ```
 
 ```
@@ -453,10 +453,29 @@ Every page carries the school's slogan and the navy, green and gold stripe. The 
 
 - **With `--photo` you choose the photos by id.** Find them in the dashboard's Media tab, or with `seth-agent photos "children on stage"`. The ids come out in the order you give them, so `--photo 48 --photo 60` shows 48 first. A photo that isn't in the library is an error.
 - `--seconds 7` sets how long each photo is shown (2 to 20, default 5). The title and closing cards are 4 seconds each.
-- `--music file` plays any audio file ffmpeg can read under the video, faded in and out and cut to its length (it loops if the video is longer). Use music you have the right to use.
+- **Music** is on by default when the agent finds the photos, and you can turn it off (`--no-music`; "No music" on the dashboard; `"music": "none"` in the API). See [Music](#music).
 - `-o file.mp4` chooses where it is saved; the default is `data/slideshows/`.
 - This needs **Google Chrome** (it draws the pages, as it does for flyers) and **ffmpeg**: on a Mac, `brew install ffmpeg`.
 - **Watch the video before you share it.** The photos show children, and the agent can't tell which ones are fine to share.
+
+### Music
+
+Slideshows can have instrumental background music, made on this computer by [MusicGen](https://huggingface.co/facebook/musicgen-small), so nothing is sent anywhere and there is no per-video cost.
+
+| | Music is | Turn it off with | Other choices |
+|---|---|---|---|
+| `slideshow --find` | on (`auto`) | `--no-music` | `--music NAME` or `--music file.mp3` |
+| `slideshow --photo ...` | off | (already off) | `--music NAME` or `--music file.mp3` |
+| Dashboard | on (*Automatic*) | choose **No music** | pick a track from the list |
+| `POST /slideshows` | on (`auto`) | `"music": "none"` | `"music": "<track name>"` |
+
+- **Automatic music suits the event.** The model that reads your sentence also picks a *mood* for it, one of three defined in [brand.json](brand/brand.json): **cheerful** (everyday life, classes, picnics), **celebratory** (programs, concerts, graduations, parties) or **calm** (reflective or quiet videos). Each mood has one instrumental track, about half a minute long, made into a seamless loop that repeats under the video. It is levelled to a steady background volume, fades in and out, and stops with the last slide.
+- **Made once, then reused.** The first time a mood is needed its track is made (about 15 seconds on an Apple GPU; the very first time also downloads the 2 GB model) and saved in `SETH_MUSIC_DIR` (`data/music/`). After that it is reused. To make all three ahead of time, or to listen before using them: `seth-agent music generate`. `seth-agent music generate calm --force` makes a new take of one; `seth-agent music list` shows what there is.
+- **Instrumental only.** Every prompt ends "instrumental only, no vocals", and the brand kit's `music` section says what the music is like. Edit the moods' prompts there to change the sound.
+- **Your own music works too.** Put audio files (wav, mp3, m4a, aac, flac, ogg) you have the right to use in the music folder, and name one: `--music "Spring Song"`, or pick it on the dashboard. A file named like a mood (`calm.mp3`) is used for that mood instead of making one. On the command line you can also give a path.
+- **Music never costs you the video.** If the music can't be made (the optional install is missing, the model can't load), the video is made without it and says why.
+- **Needs** the optional `media` install (`pip install -e '.[media]'`), like photo search. The model's weights are licensed CC-BY-NC 4.0 (non-commercial use), so check that suits how the videos are used.
+- **Listen first.** The agent can't hear the music; it only checks it is steady and loops cleanly. Listen to a track before the school relies on it.
 
 Not yet: captions on each photo, portrait (phone-shaped) videos, and video clips.
 
@@ -487,6 +506,8 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_FLYER_DIR` | `data/flyers/` | Where `seth-agent flyer` saves its PNGs |
 | `SETH_CHROME` | (found automatically) | The Chrome, Chromium or Edge that draws flyers and slideshow pages, if it isn't in the usual place |
 | `SETH_SLIDESHOW_DIR` | `data/slideshows/` | Where `seth-agent slideshow` saves its MP4s |
+| `SETH_MUSIC_DIR` | `data/music/` | The music folder: the tracks made for each [mood](#music), and any music you add |
+| `SETH_MUSIC_MODEL` | `facebook/musicgen-small` | The MusicGen model that makes the music (downloaded the first time) |
 | `SETH_FFMPEG` | (found automatically) | The ffmpeg that makes slideshow videos, if it isn't on the path |
 | `SETH_FLYER_PHOTO_GROUP` | `all` | The group [flyer photos](#photos) come from, by its exact name. `all` (or empty) means every group |
 | `SETH_FLYER_PHOTO_MIN_SCORE` | `0.25` | How well a photo must match the event to be used (CLIP similarity, about 0.3 for a good match and 0.2 for an unrelated photo). Raise it for fewer, better photos |
