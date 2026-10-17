@@ -31,6 +31,9 @@ def test_dashboard_is_served_alongside_the_api(source, store):
     # Status is the first tab, so it is the one that opens by default, and it has a Metrics section.
     assert page.text.index('id="tab-status"') < page.text.index('id="tab-calendar"')
     assert 'id="metrics-title">Metrics<' in page.text
+    # The Media tab is a photo search: a query box, a group dropdown and a Search button.
+    for marker in ('id="tab-media"', 'id="media-query"', 'id="media-group"', 'id="media-go"'):
+        assert marker in page.text
     assert client.get("/seth-crest.png").status_code == 200
     assert client.get("/calendar").json()["today"]
     assert client.get("/health").status_code == 200

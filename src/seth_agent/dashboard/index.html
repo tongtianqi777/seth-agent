@@ -83,6 +83,25 @@
   .bars .fill { display: block; height: 100%; border-radius: 5px; background: var(--green); }
   .bars .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 
+  /* Media tab */
+  .search { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .search label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .search .q { flex: 1 1 280px; }
+  .search input, .search select { font: inherit; font-size: 15px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 7px 11px; min-width: 0; }
+  .search select { max-width: 100%; }
+  .search .go { background: var(--primary); color: var(--primary-text); }
+  .search .go:not(:disabled):hover { background: var(--primary-hover); }
+  .results-head { margin: 16px 0 10px; font-size: 13px; color: var(--muted); }
+  .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; }
+  .photo { margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--dim); display: flex; flex-direction: column; min-width: 0; }
+  .photo > button { padding: 0; border: 0; border-radius: 0; display: block; background: var(--off-bg); }
+  .photo img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+  .photo figcaption { padding: 7px 9px 8px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .photo figcaption b { display: block; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .photo .cap { margin-top: 2px; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #photo-dialog { width: min(900px, calc(100vw - 32px)); }
+  #photo-dialog img { display: block; max-width: 100%; max-height: calc(100vh - 220px); margin: 0 auto 12px; border-radius: 8px; }
+
   /* Calendar toolbar */
   .cal-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .cal-head h3 { margin: 0 6px 0 0; font-size: 20px; font-weight: 600; color: var(--heading); min-width: 9ch; }
@@ -174,6 +193,7 @@
     <button role="tab" id="tab-status" aria-controls="panel-status" aria-selected="true">Status</button>
     <button role="tab" id="tab-calendar" aria-controls="panel-calendar" aria-selected="false">School calendar</button>
     <button role="tab" id="tab-volunteering" aria-controls="panel-volunteering" aria-selected="false">Volunteering</button>
+    <button role="tab" id="tab-media" aria-controls="panel-media" aria-selected="false">Media</button>
   </div>
 
   <section id="panel-status" role="tabpanel" aria-labelledby="tab-status" class="card">
@@ -218,6 +238,24 @@
     <div id="vol-calendar"></div>
   </section>
 
+  <section id="panel-media" role="tabpanel" aria-labelledby="tab-media" class="card" hidden>
+    <h2>Media</h2>
+    <p class="sub">Find photos from the school's WhatsApp groups by describing what they show.</p>
+    <form id="media-form" class="search">
+      <label class="q">Search
+        <input id="media-query" type="search" placeholder="e.g. children playing on the playground" autocomplete="off" required>
+      </label>
+      <label>Group
+        <select id="media-group"><option value="Preschool">Preschool</option></select>
+      </label>
+      <button id="media-go" class="go" type="submit">Search</button>
+    </form>
+    <div class="error" id="media-error" hidden></div>
+    <div class="warning" id="media-warning" hidden></div>
+    <p class="results-head" id="media-summary" role="status" hidden></p>
+    <div class="photos" id="media-results"></div>
+  </section>
+
   <!-- One calendar: the toolbar and the month/list views. The school and each volunteering group use a copy. -->
   <template id="calendar-template">
     <div class="cal-head">
@@ -252,12 +290,22 @@
   <form method="dialog" class="dlg-actions"><button autofocus>Close</button></form>
 </dialog>
 
+<dialog id="photo-dialog" aria-labelledby="photo-title">
+  <h3 id="photo-title"></h3>
+  <p class="when-line" id="photo-meta"></p>
+  <img id="photo-img" alt="">
+  <p id="photo-caption" hidden></p>
+  <form method="dialog" class="dlg-actions"><button autofocus>Close</button></form>
+</dialog>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const DAY_MS = 86400000;
 
-async function api(path) {
-  const resp = await fetch(path);
+async function api(path, payload) {
+  const resp = await fetch(path, payload === undefined ? undefined : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(body.detail || resp.statusText);
   return body;
@@ -299,6 +347,7 @@ const tabs = [
   { id: "status", refresh: () => status.refresh(), interval: 5000 },
   { id: "calendar", refresh: () => school.refresh(), interval: 5000 },
   { id: "volunteering", refresh: () => volunteering.refresh(), interval: 5000 },
+  { id: "media", refresh: () => media.refresh(), interval: 60000 },
 ];
 let activeTab = tabs[0].id;
 
@@ -758,6 +807,113 @@ const volunteering = createCalendar($("vol-calendar"), {
     return { c: await api(`calendar?group=${group}&from=${from}&to=${to}&include_cancelled=true`), h };
   },
 });
+
+/* ---------- Media ----------
+   Photo search over POST /media/search. Searching only happens on demand; the tab itself
+   just keeps the group list (from /metrics) current. */
+const media = (() => {
+  const DEFAULT_GROUP = "preschool", ALL = "";
+  const LIMIT = 24;
+  let searchId = 0, groupsKey = "", enabled = true;
+
+  function showError(text) {
+    $("media-error").hidden = !text;
+    $("media-error").textContent = text;
+  }
+
+  // The group the user picked; until they pick one, the default group.
+  let choice = null;
+  function setGroups(names) {
+    const key = JSON.stringify(names);
+    if (key === groupsKey) return;
+    groupsKey = key;
+    const preschool = names.find((n) => n.toLowerCase() === DEFAULT_GROUP) || "Preschool";
+    const options = names.includes(preschool) ? names : [preschool, ...names]; // the default, even before it has photos
+    const select = $("media-group");
+    select.replaceChildren(...options.map((n) => new Option(n, n)), new Option("All groups", ALL));
+    const want = choice === null ? preschool : choice;
+    select.value = [...select.options].some((o) => o.value === want) ? want : preschool;
+  }
+  $("media-group").onchange = (e) => { choice = e.target.value; };
+
+  async function refresh() {
+    try {
+      const m = await api("metrics");
+      setGroups(m.photos.by_group.map((g) => g.group));
+      enabled = m.photos.enabled;
+      $("media-warning").hidden = enabled;
+      $("media-warning").textContent = enabled ? "" : "Photo search is off. Install it with pip install -e '.[media]', then restart the agent.";
+      $("media-go").disabled = !enabled;
+    } catch (e) {
+      // Searching will report the problem if it persists.
+    }
+  }
+
+  function openPhoto(r, src) {
+    $("photo-title").textContent = r.group;
+    $("photo-meta").textContent = [r.sender, when(r.sent_at), "match " + r.score.toFixed(2)].join(" · ");
+    $("photo-img").src = src;
+    $("photo-img").alt = r.caption || "Photo from " + r.group;
+    $("photo-caption").hidden = !r.caption;
+    $("photo-caption").textContent = r.caption || "";
+    $("photo-dialog").showModal();
+  }
+
+  function card(r) {
+    const src = r.url.replace(/^\//, ""); // relative, like the other API calls
+    const fig = el("figure", "photo");
+    const open = el("button");
+    open.type = "button";
+    open.setAttribute("aria-label", "Open photo from " + r.group + ", " + when(r.sent_at));
+    const img = el("img");
+    img.src = src;
+    img.loading = "lazy";
+    img.alt = r.caption || "Photo from " + r.group;
+    img.onerror = () => { img.replaceWith(el("div", "empty", "Photo unavailable")); open.disabled = true; };
+    open.append(img);
+    open.onclick = () => openPhoto(r, src);
+    const cap = el("figcaption");
+    cap.append(el("b", null, r.group), `${when(r.sent_at)} · ${r.score.toFixed(2)}`);
+    if (r.caption) cap.append(el("div", "cap", r.caption));
+    fig.append(open, cap);
+    return fig;
+  }
+
+  async function search(e) {
+    e.preventDefault();
+    const query = $("media-query").value.trim();
+    if (!query || !enabled) return;
+    const group = $("media-group").value;
+    const id = ++searchId;
+    const go = $("media-go");
+    go.disabled = true;
+    go.textContent = "Searching…";
+    showError("");
+    try {
+      const res = await api("media/search", { query, group: group || null, limit: LIMIT });
+      if (id !== searchId) return;
+      const where = res.group ? "in " + res.group.name : "in all groups";
+      $("media-summary").hidden = false;
+      $("media-summary").textContent = res.results.length
+        ? `Top ${res.results.length} of ${res.searched.toLocaleString()} photos ${where} for “${res.query}”, best match first.`
+        : `No photos to search ${where} yet.`;
+      $("media-results").replaceChildren(...res.results.map(card));
+    } catch (err) {
+      if (id !== searchId) return;
+      $("media-summary").hidden = true;
+      $("media-results").replaceChildren();
+      showError(err.message);
+    } finally {
+      if (id === searchId) {
+        go.disabled = !enabled;
+        go.textContent = "Search";
+      }
+    }
+  }
+  $("media-form").onsubmit = search;
+
+  return { refresh };
+})();
 
 selectTab(location.hash.slice(1));
 </script>
