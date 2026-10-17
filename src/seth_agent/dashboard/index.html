@@ -65,6 +65,24 @@
   .warning { margin: 12px 0 0; padding: 9px 12px; border-radius: 9px; background: var(--warn-bg); color: var(--warn); font-size: 13px; word-break: break-word; }
   .empty { color: var(--muted); margin: 14px 0 0; }
 
+  /* Status tab */
+  .metrics { margin-top: 18px; }
+  .metrics > h3 { margin: 0 0 4px; font-size: 19px; font-weight: 600; color: var(--heading); }
+  .metrics h4 { margin: 18px 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+  .stat { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--dim); min-width: 0; }
+  .stat .v { font-size: 22px; font-weight: 600; line-height: 1.25; color: var(--heading); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .stat .v.small { font-size: 14px; line-height: 1.7; }
+  .stat .v.bad { color: var(--bad); }
+  .stat .l { font-size: 13px; color: var(--muted); }
+  .stat .h { font-size: 12px; color: var(--muted); opacity: .85; margin-top: 2px; }
+  .bars { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+  .bars li { display: grid; grid-template-columns: minmax(90px, 220px) 1fr 56px; align-items: center; gap: 10px; font-size: 14px; }
+  .bars .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bars .track { display: block; height: 10px; border-radius: 5px; background: var(--off-bg); overflow: hidden; }
+  .bars .fill { display: block; height: 100%; border-radius: 5px; background: var(--green); }
+  .bars .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
   /* Calendar toolbar */
   .cal-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .cal-head h3 { margin: 0 6px 0 0; font-size: 20px; font-weight: 600; color: var(--heading); min-width: 9ch; }
@@ -153,11 +171,29 @@
 <main>
   <!-- To add a tab: add a button here, a matching tabpanel below, and an entry in `tabs` in the script. -->
   <div class="main-tabs" role="tablist" aria-label="What the agent maintains">
-    <button role="tab" id="tab-calendar" aria-controls="panel-calendar" aria-selected="true">School calendar</button>
+    <button role="tab" id="tab-status" aria-controls="panel-status" aria-selected="true">Status</button>
+    <button role="tab" id="tab-calendar" aria-controls="panel-calendar" aria-selected="false">School calendar</button>
     <button role="tab" id="tab-volunteering" aria-controls="panel-volunteering" aria-selected="false">Volunteering</button>
   </div>
 
-  <section id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" class="card">
+  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status" class="card">
+    <div class="row">
+      <div>
+        <h2>Status</h2>
+        <p class="sub" style="margin-bottom:12px">Whether the agent is running, and what it has done so far.</p>
+      </div>
+      <span class="spacer"></span>
+      <span id="status-pill" class="pill" role="status">Checking…</span>
+    </div>
+    <div class="error" id="status-error" hidden></div>
+    <div class="warning" id="status-warning" hidden></div>
+    <section class="metrics" aria-labelledby="metrics-title">
+      <h3 id="metrics-title">Metrics</h3>
+      <div id="metrics"></div>
+    </section>
+  </section>
+
+  <section id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" class="card" hidden>
     <div class="row">
       <div>
         <h2>School calendar</h2>
@@ -260,6 +296,7 @@ const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numer
    Each tab is {id, refresh, interval}. Its button is #tab-<id>, its panel is
    #panel-<id>, and the URL hash remembers which one is open. */
 const tabs = [
+  { id: "status", refresh: () => status.refresh(), interval: 5000 },
   { id: "calendar", refresh: () => school.refresh(), interval: 5000 },
   { id: "volunteering", refresh: () => volunteering.refresh(), interval: 5000 },
 ];
@@ -295,6 +332,126 @@ tabs.forEach((t, i) => {
   setInterval(() => { if (activeTab === t.id && !document.hidden) t.refresh(); }, t.interval);
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tabs.find((t) => t.id === activeTab).refresh(); });
+
+/* ---------- Status ----------
+   Metrics from /metrics, shown as tiles. The pill and the problem banner come from /health. */
+const status = (() => {
+  const count = (n) => Number(n || 0).toLocaleString();
+  const bytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+  const duration = (since) => {
+    const s = Math.max(0, (Date.now() - new Date(since)) / 1000);
+    if (s < 60) return "under a minute";
+    if (s < 3600) return Math.round(s / 60) + " min";
+    if (s < 86400) return (s / 3600).toFixed(1).replace(/\.0$/, "") + " h";
+    return (s / 86400).toFixed(1).replace(/\.0$/, "") + " days";
+  };
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  function stat(label, value, hint, cls) {
+    const box = el("div", "stat");
+    box.append(el("div", "v" + (cls ? " " + cls : ""), value), el("div", "l", label));
+    if (hint) box.append(el("div", "h", hint));
+    return box;
+  }
+
+  function section(title, tiles, extra) {
+    const wrap = el("div");
+    wrap.append(el("h4", null, title));
+    const grid = el("div", "stats");
+    grid.append(...tiles);
+    wrap.append(grid);
+    if (extra) wrap.append(extra);
+    return wrap;
+  }
+
+  function bars(rows) {
+    const ul = el("ul", "bars");
+    const max = Math.max(1, ...rows.map((r) => r.photos));
+    for (const r of rows) {
+      const li = el("li");
+      const name = el("span", "name", r.group);
+      name.title = r.group;
+      const fill = el("span", "fill");
+      fill.style.width = (100 * r.photos / max) + "%";
+      const track = el("span", "track");
+      track.append(fill);
+      li.append(name, track, el("span", "n", count(r.photos)));
+      ul.append(li);
+    }
+    return ul;
+  }
+
+  function render(m) {
+    const a = m.agent, p = m.photos;
+    const tiles = [stat("Running for", duration(m.started_at), "since " + when(m.started_at))];
+    for (const name of Object.keys(a.extractors).sort()) {
+      const x = a.extractors[name];
+      const hint = [(x.skipped || 0) + " skipped", (x.failed || 0) + " failed"].join(" · ");
+      tiles.push(stat(cap(name) + " messages read", count(x.extracted), hint, x.failed ? "bad" : ""));
+    }
+    tiles.push(stat("Failed batches", count(a.failed_batches), a.failed_batches ? "see /health for the latest" : "nothing given up on", a.failed_batches ? "bad" : ""));
+
+    const ev = (cat, st) => (a.events[cat] || {})[st] || 0;
+    const calendars = [
+      stat("School events", count(ev("school", "active")), count(ev("school", "cancelled")) + " cancelled"),
+      stat("Volunteering events", count(ev("volunteering", "active")), count(ev("volunteering", "cancelled")) + " cancelled"),
+    ];
+
+    const out = [section("Agent", tiles), section("Calendars", calendars)];
+
+    const s = p.searches;
+    const photoTiles = [
+      stat("Photos indexed", count(p.indexed), p.unique_images !== p.indexed ? count(p.unique_images) + " unique images" : null),
+      stat("Searchable now", count(p.searchable), p.indexed - p.searchable ? count(p.indexed - p.searchable) + " made by another model" : "made by the model in use"),
+      stat("Embedding model", p.model || "off", p.by_model.length ? count(p.by_model[0].dimensions) + " numbers per photo" : null, "small"),
+      stat("Embedding storage", bytes(p.embedding_bytes), "in the memory database"),
+      stat("Newest photo", p.newest_sent_at ? when(p.newest_sent_at) : "none yet", p.oldest_sent_at ? "oldest " + when(p.oldest_sent_at) : null, p.newest_sent_at ? "small" : ""),
+      stat("Last indexed", p.last_indexed_at ? ago(p.last_indexed_at) : "never", null, "small"),
+      stat("Searches", count(s.count), s.count ? "avg " + s.avg_ms + " ms · last " + s.last_ms + " ms" : "since the agent started"),
+    ];
+    let note = null;
+    if (!p.enabled) {
+      note = el("p", "note", "Photo search is off. Install it with pip install -e '.[media]', then restart the agent. Photos indexed earlier are listed above but can't be searched.");
+    }
+    out.push(section("Photos", photoTiles, note));
+    if (p.by_group.length) {
+      const wrap = el("div");
+      wrap.append(el("h4", null, "Photos by group"), bars(p.by_group));
+      out.push(wrap);
+    }
+    $("metrics").replaceChildren(...out);
+  }
+
+  function renderHealth(h, error) {
+    const pill = $("status-pill");
+    $("status-error").hidden = !error;
+    $("status-error").textContent = error ? "Can't reach the agent (" + error + "). Is `seth-agent run` running?" : "";
+    if (!h) {
+      pill.textContent = error ? "Agent unreachable" : "Checking…";
+      pill.className = "pill " + (error ? "bad" : "");
+      $("status-warning").hidden = true;
+      return;
+    }
+    const stale = !h.last_poll_at || Date.now() - new Date(h.last_poll_at) > 3 * 60 * 1000;
+    pill.textContent = stale ? "Not checking for messages" : "Up to date · checked " + ago(h.last_poll_at);
+    pill.className = "pill " + (stale ? "warn" : "ok");
+    const problem = h.last_transient_error ? "Latest problem that will be retried: " + h.last_transient_error : "";
+    $("status-warning").hidden = !problem;
+    $("status-warning").textContent = problem;
+  }
+
+  async function refresh() {
+    try {
+      const [h, m] = await Promise.all([api("health"), api("metrics")]);
+      renderHealth(h, "");
+      render(m); // small enough to redraw every time, which keeps "Running for" and "ago" fresh
+    } catch (e) {
+      renderHealth(null, e.message);
+    }
+  }
+
+  return { refresh };
+})();
 
 /* ---------- Calendars ----------
    The school calendar and each volunteering calendar look and work the same, so one

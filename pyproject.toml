@@ -17,6 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Photo search: a CLIP model that runs on this machine.
+media = ["torch>=2.2", "transformers>=4.40,<5", "pillow>=10"]
 
 [project.scripts]
 seth-agent = "seth_agent.cli:main"

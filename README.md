@@ -27,7 +27,7 @@ flowchart LR
     A --> M[("School memory")]
     M --> CAL["School calendar"]
     M -.-> UPD["Latest updates"]
-    M -.-> MED["Media library"]
+    M --> MED["Photo library"]
     M -.-> OUT["Newsletters, yearbook,<br/>video compilations"]
 ```
 
@@ -40,7 +40,8 @@ The agent reads the messages with either Claude or a model running on the same m
 | **School calendar** | Working | Upcoming events, closures, deadlines and schedule changes, picked out of the school's WhatsApp groups |
 | **Volunteering calendars** | Working | For each volunteering group, such as the preschool P.E. teachers' parents, who is volunteering when and what it involves |
 | **Latest updates** | Planned | The announcements and news worth keeping, in one place |
-| **Media library** | Planned | The school's photos and videos, organized so they can be found and reused |
+| **Photo library** | Working | The school's photos, searchable by describing them ("children eating meals"), across all groups or within one, such as Preschool. See [Photo search](#photo-search) |
+| **Video library** | Planned | The school's videos, organized so they can be found and reused |
 
 The calendar is the first memory the agent keeps. It reads the messages that [seth-feed](../seth-ingestion) provides from the school's WhatsApp groups, picks out the ones that mention something in the future, and keeps them in a tidy calendar that people or any app can query:
 
@@ -62,6 +63,7 @@ When plans change, the calendar changes with them. *"The field trip is moved to 
 - [Everyday use](#everyday-use)
 - [The dashboard](#the-dashboard)
 - [Reading the calendar](#reading-the-calendar)
+- [Photo search](#photo-search)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Privacy](#privacy)
@@ -206,6 +208,7 @@ Groups are only sorted from now on. Messages the agent has already read stay whe
 | `seth-agent calendar --from 2026-11-01 --to 2026-11-30` | Prints events in a date range |
 | `seth-agent calendar --all` | Also shows cancelled events |
 | `seth-agent calendar --group "Preschool P.E. Teachers"` | Prints that volunteering group's calendar instead of the school calendar |
+| `seth-agent photos "children eating meals" --group Preschool` | Finds photos by describing them (`--group` is optional). Needs [photo search](#photo-search) |
 
 Add `-v` before any command for detailed logs, e.g. `seth-agent -v once`.
 
@@ -213,7 +216,7 @@ All commands live in `.venv/bin/`. To type just `seth-agent`, activate the envir
 
 ## The dashboard
 
-While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard has one tab for each kind of memory the agent maintains. Today there are two: the **School calendar** and **Volunteering**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
+While `seth-agent run` is running, open **http://127.0.0.1:8765** in a browser. The dashboard opens on **Status**, which shows whether the agent is up to date and a **Metrics** section: how long it has been running, how many messages each part has read, the events on each calendar, and for photo search, how many photos are indexed and searchable, the model, the storage the embeddings take, which groups the photos come from and how many searches have been answered. After that comes one tab for each kind of memory the agent maintains. Today there are two: the **School calendar** and **Volunteering**. Each shows a month view of every event, with a list view for small screens. The Volunteering tab has one calendar for each volunteering group, with Preschool P.E. Teachers first. When there is more than one, you pick between them above the calendar. Click an event to see the messages it came from and how it has changed. A badge shows whether the agent is up to date, and the page refreshes itself every few seconds.
 
 It uses the same look as the [seth-ingestion](../seth-ingestion) dashboard. New memories get their own tab, see [Adding a new kind of memory](docs/DEVELOPMENT.md#adding-a-new-kind-of-memory).
 
@@ -259,6 +262,43 @@ curl -s http://127.0.0.1:8765/health
 
 You can also open **http://127.0.0.1:8765/docs** in a browser to try every endpoint interactively. The complete reference is in [docs/API.md](docs/API.md).
 
+## Photo search
+
+The agent indexes the photos in the school's groups so they can be found by describing them. A model that runs on this machine (CLIP) turns each photo, and each search, into numbers that can be compared, so *"children on a soccer field"* finds photos of that even if nobody captioned them. No photo leaves the machine, and no language model is involved.
+
+Install the extra libraries once (a few GB, mostly PyTorch). The photo model, about 600 MB, downloads the first time the agent runs:
+
+```bash
+.venv/bin/pip install -e '.[dev,media]'
+```
+
+With them installed, `seth-agent run` indexes new photos as they arrive, along with the calendars. Photos sent before this was installed are indexed once you tell the agent to read the history again (see [Resetting](docs/MEMORY.md#resetting)). Without the extra libraries the agent runs as before, without photo search. Set `SETH_MEDIA_INDEX=0` to turn it off.
+
+A search is a query and, optionally, the group to look in. The group is its own field, so the agent never has to guess it from your sentence:
+
+```bash
+curl -s http://127.0.0.1:8765/media/search -H 'Content-Type: application/json' \
+  -d '{"query": "children sitting at table", "group": "Preschool"}'
+
+curl -s http://127.0.0.1:8765/media/search -H 'Content-Type: application/json' \
+  -d '{"query": "children eating meals"}'
+```
+
+The second has no `group`, so it searches every group. The group must be the group's exact name (case and extra spaces don't matter): "Preschool" and "Preschool P.E. Teachers" are different groups, and a name that matches neither gets a `404` that lists the real ones. Each result has the photo's group, sender, time and caption, a `score`, and a `url` for the picture. The fields are in [docs/API.md](docs/API.md#post-mediasearch).
+
+From a terminal:
+
+```bash
+.venv/bin/seth-agent photos "children on a soccer field" --group Preschool
+.venv/bin/seth-agent photos "children eating meals" --limit 5
+```
+
+Good to know:
+
+- A search always returns the best photos it has, even when none is a good match. The `score` tells them apart, and `min_score` drops weak ones.
+- It finds what a photo looks like. It can't read writing in a photo or tell which child is which.
+- Only photos are indexed, not videos.
+
 ## Configuration
 
 The defaults match a standard setup, so most people won't need to change anything. To change a setting, set an environment variable before running:
@@ -280,6 +320,8 @@ The defaults match a standard setup, so most people won't need to change anythin
 | `SETH_LOCAL_MAX_TOKENS` | `16000` | The most the local model may write for one batch, thinking included. A model that reasons at length can hit this before it answers, which fails the batch ("hit max_tokens before finishing"). Raise it if you see that |
 | `SETH_BATCH_SIZE` | `20` | Messages per request to the model. Lower it (say `8`) for a local model |
 | `SETH_VOLUNTEERING_GROUPS` | `Preschool P.E. Teachers=The preschool P.E. class is usually on Fridays at 11:30am.` | WhatsApp groups to treat as volunteering groups, as `Name=usual routine` entries separated by `;`. The routine is optional. Setting it replaces the default (so include Preschool P.E. Teachers and its routine if you still want them); set it empty for none |
+| `SETH_MEDIA_INDEX` | `1` | Index photos for [photo search](#photo-search) when the `media` extra is installed. `0` turns it off |
+| `SETH_MEDIA_MODEL` | `openai/clip-vit-base-patch16` | The CLIP model that describes photos and searches (a Hugging Face name). Changing it means indexing the photos again |
 | `SETH_API_HOST` / `SETH_API_PORT` | `127.0.0.1` / `8765` | Where the HTTP API listens |
 
 Example:
@@ -341,7 +383,7 @@ Stop the agent and delete `data/memory.db`. The next run rebuilds the calendar f
 The school's chats contain messages from parents, students and staff, so the agent is built to keep that data close:
 
 - **Everything stays on the machine it runs on**, except the message text sent to Claude to read. With `SETH_PROVIDER=local`, nothing leaves it at all.
-- **Media files aren't sent.** Only text and captions are.
+- **Media files aren't sent.** Only text and captions are. Photos are read by a model on this machine for [photo search](#photo-search), whichever `SETH_PROVIDER` you use.
 - **The API listens only on the local machine** (`127.0.0.1`), so other devices on the network can't reach it. It has no authentication, so don't expose it more widely without adding some.
 - **The agent never changes seth-ingestion's data.** It only reads it, through the read-only `seth-feed` API.
 - The school's memory is a single SQLite file in `data/`, which git ignores.

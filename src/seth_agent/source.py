@@ -25,6 +25,29 @@ class SourceError(Exception):
 
 
 @dataclass(frozen=True)
+class MediaFile:
+    """One file attached to a message (a photo, a video, a voice note, ...) as seth-feed lists it."""
+
+    id: int  # seth-feed's file id, stable; the key for GET /media/{id}
+    media_type: str  # image | video | voice | audio | document | sticker
+    mime: str
+    sha256: str  # identifies the content: the same photo forwarded to two groups has the same value
+    caption: str | None
+    downloadable: bool  # false when the download failed, so there are no bytes to read
+
+    @property
+    def is_photo(self) -> bool:
+        return self.downloadable and self.media_type == "image" and self.mime.lower().startswith("image/")
+
+
+@dataclass(frozen=True)
+class Group:
+    jid: str
+    name: str
+    media_folder: str
+
+
+@dataclass(frozen=True)
 class Message:
     chat_jid: str  # the group's JID
     message_id: str
@@ -39,6 +62,7 @@ class Message:
     edit_target_body: str | None = None
     quoted_body: str | None = None
     group: str = ""  # the group's name
+    files: tuple[MediaFile, ...] = ()  # in album order; empty for edit rows
 
     @property
     def key(self) -> tuple[str, str]:
@@ -69,6 +93,17 @@ def _text(raw: dict[str, Any]) -> str | None:
     if raw["message_type"] == "edit":
         return raw.get("body")
     return raw.get("current_body", raw.get("body"))
+
+
+def _media_file(raw: dict[str, Any]) -> MediaFile:
+    return MediaFile(
+        id=raw["id"],
+        media_type=raw.get("media_type") or "",
+        mime=raw.get("mime") or "",
+        sha256=raw.get("sha256") or "",
+        caption=raw.get("caption"),
+        downloadable=bool(raw.get("url")),
+    )
 
 
 def _mentions(*raws: dict[str, Any] | None) -> dict[str, str]:
@@ -140,6 +175,24 @@ class MessageSource:
         raws = [r for r in (self._get_raw(k) for k in dict.fromkeys(keys)) if r]
         return self._to_messages(raws)
 
+    def list_groups(self) -> list[Group]:
+        """The groups seth-feed records."""
+        data = self._get("/groups")
+        assert data is not None
+        return [Group(g["group_jid"], g["name"], g.get("media_folder") or "") for g in data["groups"]]
+
+    def fetch_media(self, file_id: int) -> bytes | None:
+        """A file's bytes, or None if seth-feed has no such file (or its download failed)."""
+        try:
+            resp = self.client.get(f"/media/{file_id}")
+        except httpx.HTTPError as e:
+            raise SourceError(f"seth-feed unreachable at {self.base_url}: {e}") from e
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            raise SourceError(f"seth-feed /media/{file_id} returned {resp.status_code}: {resp.text[:200]}")
+        return resp.content
+
     def _get_raw(self, key: tuple[str, str]) -> dict[str, Any] | None:
         chat_jid, message_id = key
         return self._get(f"/messages/{quote(chat_jid, safe='')}/{quote(message_id, safe='')}", allow_404=True)
@@ -184,6 +237,7 @@ class MessageSource:
                     edit_target_body=_resolve_mentions(original.get("body"), names) if original else None,
                     quoted_body=_resolve_mentions(_text(quoted), quoted_names) if quoted else None,
                     group=r.get("group") or "",
+                    files=tuple(_media_file(f) for f in r.get("files") or []),
                 )
             )
         return out

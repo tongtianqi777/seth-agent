@@ -18,7 +18,10 @@ This is the reference for apps and tools that read the school calendar from seth
 | [`GET /calendar`](#get-calendar) | Events in a date range, grouped for display. The school calendar, or a volunteering group's |
 | [`GET /volunteering`](#get-volunteering) | The volunteering calendars |
 | [`GET /events/{id}`](#get-eventsid) | One event, with the messages behind it and its history |
+| [`POST /media/search`](#post-mediasearch) | Find photos by describing them, optionally within one group |
+| [`GET /media/{id}`](#get-mediaid) | An indexed photo's bytes |
 | [`GET /health`](#get-health) | Whether the agent is keeping up |
+| [`GET /metrics`](#get-metrics) | Counts for a status page: what the agent has done, and the photo index |
 
 ## The event object
 
@@ -186,6 +189,67 @@ curl -s http://127.0.0.1:8765/events/3
 
 **Errors:** `404` if there is no event with that id.
 
+## `POST /media/search`
+
+Finds photos by describing what they show. The group is a separate field, not part of the description: with `group`, only photos sent in that group are considered, and they are ranked by how well they match `query`. Without it, every group's photos are searched.
+
+Photo search needs the optional `media` install (`pip install -e '.[media]'`, see the [README](../README.md#photo-search)). Without it, this endpoint answers `503`.
+
+**Request body** (JSON)
+
+| Field | Default | Description |
+|---|---|---|
+| `query` | required | What the photos show, in plain words: `"children on a soccer field"`. Not blank |
+| `group` | none | A group's exact name, ignoring case and extra spaces (`"Preschool"`). Its media folder name or JID also work. Omit it, or send `null`, to search every group |
+| `limit` | `20` | How many photos to return, 1 to 100 |
+| `min_score` | none | Leave out photos that match less well than this |
+
+```bash
+curl -s http://127.0.0.1:8765/media/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "children sitting at table", "group": "Preschool"}'
+```
+
+```json
+{
+  "query": "children sitting at table",
+  "group": { "name": "Preschool", "jid": "120363953379380360@g.us" },
+  "searched": 412,
+  "results": [
+    {
+      "file_id": 41,
+      "score": 0.3127,
+      "group": "Preschool",
+      "chat_jid": "120363953379380360@g.us",
+      "message_id": "3A6FD07C4B2A11E0D93A",
+      "sender": "Melissa Chen",
+      "sent_at": "2026-10-14T16:04:00Z",
+      "caption": "Snack time!",
+      "mime": "image/jpeg",
+      "url": "/media/41"
+    }
+  ]
+}
+```
+
+| Field | Description |
+|---|---|
+| `group` | The group that was searched, or `null` when none was given |
+| `searched` | How many indexed photos were compared. It is `0` for a group with no indexed photos yet |
+| `results[].score` | How well the photo matches, from -1 to 1, best first. The numbers are small even for good matches (a good one is typically 0.25 to 0.35), so compare scores within one search rather than against a fixed bar |
+| `results[].caption` | The photo's caption, or the message's text for an album. May be `null` |
+| `results[].url` | Where to get the photo: [`GET /media/{id}`](#get-mediaid) on this server |
+
+A search always returns the best `limit` photos it has, even if none is a good match. Use `min_score` to cut those off. An empty `results` means there is nothing indexed to compare.
+
+**Errors:** `404` if `group` isn't the exact name of a group (the message lists the known ones). It never guesses: "Preschool" does not match "Preschool P.E. Teachers". `422` for a blank `query` or a `limit` out of range. `502` if seth-feed can't be reached to look up the group. `503` if photo search isn't installed or is turned off.
+
+## `GET /media/{id}`
+
+The photo with this seth-feed file id, as raw bytes with its `Content-Type`, fetched from seth-feed. Only photos that appear in search results are served.
+
+**Errors:** `404` if the photo isn't indexed, or seth-feed no longer has it. `502` if seth-feed can't be reached.
+
 ## `GET /health`
 
 Tells you whether the agent is keeping up. Use it for a status light, or to check the agent before you trust the calendar.
@@ -197,7 +261,8 @@ Tells you whether the agent is keeping up. Use it for a status light, or to chec
   "last_transient_error": null,
   "last_extraction_error": null,
   "active_events": 3,
-  "active_volunteering_events": 2
+  "active_volunteering_events": 2,
+  "indexed_photos": 412
 }
 ```
 
@@ -209,6 +274,62 @@ Tells you whether the agent is keeping up. Use it for a status light, or to chec
 | `last_extraction_error` | The latest batch of messages that was given up on (refused or unreadable): `{id, extractor, message_ids, error, at}`, or `null` |
 | `active_events` | How many school events are currently active |
 | `active_volunteering_events` | How many volunteering events are currently active, across all volunteering calendars |
+| `indexed_photos` | How many photos can be found with `/media/search` |
+
+## `GET /metrics`
+
+Counts that describe what the agent has done so far. The dashboard's Status tab is drawn from this. Unlike the calendar, these are about the agent itself, so they are a good fit for a status page or an alert. For "is it running right now?" use [`/health`](#get-health).
+
+```bash
+curl -s http://127.0.0.1:8765/metrics
+```
+
+```json
+{
+  "started_at": "2026-10-16T22:57:54Z",
+  "agent": {
+    "extractors": {
+      "calendar": { "extracted": 118, "skipped": 903 },
+      "volunteering": { "extracted": 40, "skipped": 981 },
+      "media": { "extracted": 205, "skipped": 816 }
+    },
+    "failed_batches": 0,
+    "events": { "school": { "active": 12, "cancelled": 2 }, "volunteering": { "active": 9 } }
+  },
+  "photos": {
+    "enabled": true,
+    "model": "openai/clip-vit-base-patch16",
+    "searchable": 708,
+    "indexed": 708,
+    "unique_images": 696,
+    "embedding_bytes": 1449984,
+    "oldest_sent_at": "2026-10-01T16:00:00Z",
+    "newest_sent_at": "2026-10-14T16:00:00Z",
+    "last_indexed_at": "2026-10-16T22:57:54Z",
+    "by_model": [ { "model": "openai/clip-vit-base-patch16", "photos": 708, "dimensions": 512 } ],
+    "by_group": [ { "group": "Preschool", "photos": 412 }, { "group": "Kindergarten", "photos": 230 } ],
+    "searches": { "count": 14, "avg_ms": 38.2, "last_ms": 41.0, "last_at": "2026-10-16T23:10:02Z" }
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `started_at` | When this API process started |
+| `agent.extractors` | For each extractor (`calendar`, `volunteering`, `media`), how many messages it has handled, by outcome: `extracted` (read), `skipped` (not for it, e.g. another group's) and `failed` (given up on). Outcomes with no messages are left out. Totals over the life of the memory database |
+| `agent.failed_batches` | Batches given up on, as recorded in `extraction_errors`. `/health` has the latest one |
+| `agent.events` | Events by calendar (`school`, `volunteering`) and `status` (`active`, `cancelled`). Missing keys mean zero |
+| `photos.enabled` | Whether photo search is installed and on. When `false`, `/media/search` answers `503` and `model` is `null` |
+| `photos.model` | The embedding model in use (`SETH_MEDIA_MODEL`) |
+| `photos.searchable` | Photos indexed by the model in use. These are the ones a search can return |
+| `photos.indexed` | All photos in the index. More than `searchable` when some were indexed by a model you've since changed |
+| `photos.unique_images` | Distinct photos by content. A photo forwarded to another group counts once here and twice in `indexed` |
+| `photos.embedding_bytes` | Storage the embeddings take in the memory database |
+| `photos.oldest_sent_at`, `newest_sent_at` | The sent times of the oldest and newest indexed photos. `null` when there are none |
+| `photos.last_indexed_at` | When a photo was last indexed. `null` when there are none |
+| `photos.by_model` | Photos and vector size (`dimensions`) for each model that made embeddings |
+| `photos.by_group` | Indexed photos per group, most first. The name is the group's name when each photo was indexed |
+| `photos.searches` | Photo searches answered since the API started: `count`, average and latest time in milliseconds, and when the latest was. `null` until there has been one. These reset when the agent restarts |
 
 ## Examples for client code
 

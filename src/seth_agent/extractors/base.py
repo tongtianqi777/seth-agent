@@ -35,6 +35,11 @@ class Extractor(ABC):
     def wants(self, msg: Message) -> bool:
         """Cheap pre-filter. Messages this returns False for are marked skipped."""
 
+    def fingerprint(self, msg: Message) -> str:
+        """What decides that a message needs handling again. By default that is its text changing; an extractor
+        that reads something else (e.g. the files of an album that is still growing) can override this."""
+        return msg.body_hash
+
     @abstractmethod
     def extract(self, batch: list[Message]) -> Any:
         """Do the expensive work (e.g. call Claude). Must not write to memory.

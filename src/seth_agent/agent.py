@@ -8,6 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from .config import Config
+from .embeddings import Embedder
 from .extractors.base import Extractor, PermanentError, TransientError
 from .memory.store import MemoryStore, now_ts
 from .source import Message, MessageSource, SourceError
@@ -30,10 +31,17 @@ class PollResult:
 
 
 class Agent:
-    def __init__(self, store: MemoryStore, source: MessageSource, extractors: list[Extractor]):
+    def __init__(
+        self,
+        store: MemoryStore,
+        source: MessageSource,
+        extractors: list[Extractor],
+        embedder: Embedder | None = None,
+    ):
         self.store = store
         self.source = source
         self.extractors = extractors
+        self.embedder = embedder  # also used to answer media searches; None when photos aren't indexed
 
     def poll_once(self) -> PollResult:
         result = PollResult()
@@ -65,14 +73,14 @@ class Agent:
         return result
 
     def _run_extractor(self, ext: Extractor, messages: list[Message], result: PollResult) -> None:
-        pending = self.store.unprocessed(ext.name, messages)
+        pending = self.store.unprocessed(ext.name, messages, ext.fingerprint)
         if not pending:
             return
         wanted = [m for m in pending if ext.wants(m)]
         skipped = [m for m in pending if not ext.wants(m)]
         if skipped:
             with self.store.transaction() as conn:
-                self.store.mark_processed(conn, ext.name, skipped, "skipped")
+                self.store.mark_processed(conn, ext.name, skipped, "skipped", ext.fingerprint)
             result.skipped += len(skipped)
 
         # Batches stay within one chat so each prompt has a single conversation's context.
@@ -88,12 +96,12 @@ class Agent:
                     log.error("%s failed on %d messages: %s", ext.name, len(batch), e)
                     with self.store.transaction() as conn:
                         self.store.record_error(conn, ext.name, batch, str(e))
-                        self.store.mark_processed(conn, ext.name, batch, "failed")
+                        self.store.mark_processed(conn, ext.name, batch, "failed", ext.fingerprint)
                     result.failed += len(batch)
                     continue
                 with self.store.transaction() as conn:
                     changes = ext.apply(conn, batch, out)
-                    self.store.mark_processed(conn, ext.name, batch, "extracted")
+                    self.store.mark_processed(conn, ext.name, batch, "extracted", ext.fingerprint)
                 result.extracted += len(batch)
                 result.changes += changes
                 result.per_extractor[ext.name] = result.per_extractor.get(ext.name, 0) + changes
@@ -116,7 +124,9 @@ class Agent:
 
 
 def build_agent(config: Config) -> Agent:
+    from .embeddings import build_embedder
     from .extractors.calendar import CalendarExtractor
+    from .extractors.media import MediaExtractor
     from .extractors.volunteering import VolunteeringExtractor
     from .llm import build_llm
 
@@ -128,4 +138,7 @@ def build_agent(config: Config) -> Agent:
         CalendarExtractor(store, source, config.tz, **settings),
         VolunteeringExtractor(store, source, config.tz, **settings),
     ]
-    return Agent(store, source, extractors)
+    embedder = build_embedder(config)
+    if embedder is not None:
+        extractors.append(MediaExtractor(store, source, embedder))
+    return Agent(store, source, extractors, embedder)

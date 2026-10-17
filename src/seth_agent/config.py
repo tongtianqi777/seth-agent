@@ -40,6 +40,8 @@ class Config:
     api_port: int
     tz: tzinfo
     volunteering: VolunteeringGroups
+    media_index: bool
+    media_model: str
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -67,4 +69,6 @@ class Config:
             api_port=int(env("SETH_API_PORT", "8765")),
             tz=local_tz(),
             volunteering=VolunteeringGroups(volunteering),
+            media_index=env("SETH_MEDIA_INDEX", "1").strip().lower() not in ("0", "false", "off", "no", ""),
+            media_model=env("SETH_MEDIA_MODEL", "openai/clip-vit-base-patch16"),
         )
