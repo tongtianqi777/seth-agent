@@ -56,7 +56,7 @@ class ClipEmbedder:
                 device = "cpu"
             log.info("loading %s on %s (the first time downloads it)", self.model, device)
             model = CLIPModel.from_pretrained(self.model).to(device).eval()
-            self._loaded = (torch, model, CLIPProcessor.from_pretrained(self.model), device)
+            self._loaded = (torch, model, CLIPProcessor.from_pretrained(self.model, use_fast=False), device)
         return self._loaded
 
     def embed_images(self, images: Sequence[bytes]) -> list[list[float] | None]:
